@@ -1,7 +1,7 @@
-# RSC Streamlit app — Neo4j natural-language Q&A
+# RSC FastAPI app — Neo4j natural-language Q&A
 
 Self-contained package for **Posit Connect / RStudio Connect (RSC)**.
-Uses network Neo4j + Pfizer Vox GenAI.
+Uses network Neo4j + Pfizer Vox GenAI, with the **DID Insight2** chat UI.
 
 **Recommended production path:** push this folder to GitHub, then **Import from Git** on Connect. See [`GITHUB_DEPLOY.md`](GITHUB_DEPLOY.md).
 
@@ -9,10 +9,10 @@ Uses network Neo4j + Pfizer Vox GenAI.
 
 | File | Role |
 |------|------|
-| `app.py` | Streamlit entry point (publish this) |
+| `app.py` | FastAPI entry (`app:app`) serving the Insight2 UI and JSON API |
+| `web/static/index.html` | DID Insight2 single-page chat UI |
 | `agent.py` | NL → Cypher → answer (loads domain docs/examples for few-shot prompting) |
 | `result_presentation.py` | Validates a constrained, post-query table/chart selection |
-| `ui_results.py` | Insight2-style org chart, labeled charts, and relationship graph |
 | `example_memory.py` | Thumbs-up example library used for positive few-shot training |
 | `export.py` | CSV / JSON table download |
 | `neo4j_client.py` | Read-only Neo4j access |
@@ -22,7 +22,7 @@ Uses network Neo4j + Pfizer Vox GenAI.
 | `docs/examples/*.md` | Reusable DID Cypher few-shot examples |
 | `.github/agents/did-neo4j-qa.agent.md` | Copilot CLI custom agent template (optional) |
 | `requirements.txt` | Python deps |
-| `manifest.json` | Required for Git-backed Connect deploy |
+| `manifest.json` | Required for Git-backed Connect deploy (`python-fastapi`) |
 | `GITHUB_DEPLOY.md` | GitHub + Import from Git instructions |
 | `.env.example` | Env var template (no secrets) |
 | `.env` | Local test secrets (**do not commit**) |
@@ -32,10 +32,10 @@ Uses network Neo4j + Pfizer Vox GenAI.
 ```cmd
 cd rsc-app
 py -m pip install -r requirements.txt
-py -m streamlit run app.py
+py -m uvicorn app:app --host 127.0.0.1 --port 8010
 ```
 
-Open http://127.0.0.1:8501
+Open http://127.0.0.1:8010
 
 ## DID effort prediction
 
@@ -114,8 +114,8 @@ and similarity features. Generated exports and model artifacts are gitignored.
 
 ### Natural-language Agent integration
 
-After a trained model exists at `artifacts/did_effort_model.joblib`, the normal
-Streamlit chat automatically routes explicit prediction questions to the model:
+After a trained model exists at `artifacts/did_effort_model.joblib`, the chat UI
+automatically routes explicit prediction questions to the model:
 
 ```text
 预测 Riven 完成 C5001001_59 需要多少工时？
@@ -140,10 +140,11 @@ LLM does not calculate or alter prediction values.
 
 ### DU Team recommendation
 
-The **Recommend DU Team** tab accepts a new Delivery scope as either an Excel
-workbook with `TLF` and `Data` sheets, or paired `TLF` and `Data` CSV files.
-It does not train a model or write uploaded scope to Neo4j. Instead, Python
-ranks current `Person.Team_Lead_Name` groups using a manually refreshed local
+The **Recommend DU Team** and **Allocate TLF People** pipelines remain available
+as Python modules (`du_team_recommendation.py`, `tlf_person_allocation.py`).
+The published RSC UI matches DID Insight2 (chat + org/graph/chart/table).
+
+Python ranks current `Person.Team_Lead_Name` groups using a manually refreshed local
 snapshot of completed-DID scope evidence and active workload. Refresh it after
 each Neo4j update:
 
@@ -238,12 +239,14 @@ Full steps (create repo, `git add` list, Connect UI, Vars): **[`GITHUB_DEPLOY.md
 cd rsc-app
 py -m pip install rsconnect-python
 rsconnect add --name pfizer-connect --server https://YOUR-CONNECT-HOST --api-key YOUR_API_KEY
-rsconnect deploy streamlit . --name "Neo4j QA" --entrypoint app.py
+rsconnect deploy fastapi . --name "DID Insight" --entrypoint app:app
 ```
 
 ### Option C — Push-button publish from IDE
 
-Publish `rsc-app` as a **Streamlit** content item; set primary/entrypoint to **`app.py`**.
+Publish as a **FastAPI / Python API** content item; set the ASGI entrypoint to **`app:app`**.
+
+If Connect already has this repo as a Streamlit app, **Import from Git again** as FastAPI (or create a new content item). Git-backed Streamlit content cannot switch appmode in place.
 
 ### Environment variables on Connect (recommended)
 

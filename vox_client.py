@@ -50,6 +50,10 @@ def _vox_configured() -> bool:
     )
 
 
+def vox_configured() -> bool:
+    return _vox_configured()
+
+
 def get_vox_access_token(force_refresh: bool = False) -> str:
     load_env()
     now = time.time()

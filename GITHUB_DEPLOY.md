@@ -12,8 +12,9 @@
 
 | 文件 | 作用 |
 |------|------|
-| `manifest.json` | **关键。** Connect 靠它识别这是 Streamlit 应用，并安装依赖 |
-| `app.py` | Streamlit 入口（entrypoint） |
+| `manifest.json` | **关键。** Connect 靠它识别这是 FastAPI 应用，并安装依赖 |
+| `app.py` | FastAPI 入口（`app:app`），提供 Insight2 UI 与 `/api/*` |
+| `web/static/index.html` | DID Insight2 单页聊天界面 |
 | `agent.py` | 自然语言 → Cypher → 回答 |
 | `neo4j_client.py` | Neo4j 只读查询 |
 | `vox_client.py` | Vox GenAI OAuth + 对话 |
@@ -204,7 +205,7 @@ $tmp = Join-Path $env:TEMP "rsc-app-manifest"
 if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
 New-Item -ItemType Directory -Path $tmp | Out-Null
 Copy-Item app.py,agent.py,neo4j_client.py,vox_client.py,requirements.txt,README.md,GITHUB_DEPLOY.md,.rscignore,.gitignore,.env.example,.python-version $tmp
-& $rs write-manifest streamlit --entrypoint app.py --overwrite $tmp
+& $rs write-manifest fastapi --entrypoint app:app --overwrite $tmp
 Copy-Item (Join-Path $tmp "manifest.json") .\manifest.json -Force
 ```
 
