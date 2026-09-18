@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
+from importlib import import_module
 from typing import Any
 
 import requests
@@ -88,6 +91,48 @@ def _describe_vox_error(exc: BaseException, *, stage: str) -> str:
         "Neo4j can be fine while this still fails. "
         f"Original error: {detail}"
     )
+
+
+def _langfuse_configured() -> bool:
+    load_env()
+    public_key = _env("LANGFUSE_PUBLIC_KEY")
+    secret_key = _env("LANGFUSE_SECRET_KEY")
+    if bool(public_key) != bool(secret_key):
+        raise RuntimeError(
+            "Incomplete Langfuse config. Set both LANGFUSE_PUBLIC_KEY and "
+            "LANGFUSE_SECRET_KEY, or leave both empty to disable tracing."
+        )
+    return bool(public_key and secret_key)
+
+
+@contextmanager
+def _langfuse_generation(
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+) -> Generator[Any | None, None, None]:
+    if not _langfuse_configured():
+        yield None
+        return
+
+    try:
+        get_client = getattr(import_module("langfuse"), "get_client")
+    except ImportError as exc:
+        raise RuntimeError(
+            "Langfuse is configured but the langfuse package is not installed. "
+            "Install dependencies from requirements.txt."
+        ) from exc
+
+    langfuse = get_client()
+    with langfuse.start_as_current_observation(
+        name=_env("LANGFUSE_OBSERVATION_NAME") or "vox-chat-completion",
+        as_type="generation",
+        input=messages,
+        model=model,
+        model_parameters={"temperature": temperature},
+        metadata={"provider": "vox-genai-v2"},
+    ) as generation:
+        yield generation
 
 
 def vox_health() -> dict[str, Any]:
@@ -227,28 +272,34 @@ def chat(system: str, user: str, temperature: float = 0.1) -> tuple[str, dict[st
         {"role": "user", "content": user},
     ]
 
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-        )
-    except Exception as first_err:
-        if _vox_configured() and "401" in str(first_err):
-            try:
-                get_vox_access_token(force_refresh=True)
-                client, model = build_llm_client()
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=temperature,
-                )
-            except Exception as retry_err:
-                log.exception("Vox chat failed after 401 retry")
-                raise RuntimeError(_describe_vox_error(retry_err, stage="chat")) from retry_err
-        else:
-            log.exception("Vox chat failed")
-            raise RuntimeError(_describe_vox_error(first_err, stage="chat")) from first_err
+    with _langfuse_generation(model, messages, temperature) as generation:
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+            )
+        except Exception as first_err:
+            if _vox_configured() and "401" in str(first_err):
+                try:
+                    get_vox_access_token(force_refresh=True)
+                    client, model = build_llm_client()
+                    resp = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                    )
+                except Exception as retry_err:
+                    log.exception("Vox chat failed after 401 retry")
+                    raise RuntimeError(
+                        _describe_vox_error(retry_err, stage="chat")
+                    ) from retry_err
+            else:
+                log.exception("Vox chat failed")
+                raise RuntimeError(_describe_vox_error(first_err, stage="chat")) from first_err
 
-    text = (resp.choices[0].message.content or "").strip()
-    return text, _usage_from_response(resp)
+        text = (resp.choices[0].message.content or "").strip()
+        usage = _usage_from_response(resp)
+        if generation is not None:
+            generation.update(output=text, usage_details=usage)
+        return text, usage

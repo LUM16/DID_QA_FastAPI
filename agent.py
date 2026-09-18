@@ -7,8 +7,9 @@ import logging
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypedDict
 
+from langgraph.graph import END, START, StateGraph
 from effort_prediction import person_name_candidates, predict_effort
 from example_memory import format_positive_examples, get_memory
 from neo4j_client import (
@@ -81,6 +82,9 @@ SKILL_MAX_CHARS = 6000
 SCHEMA_MAX_CHARS = 12000
 EXAMPLE_MAX_CHARS = 5000
 MAX_EXAMPLE_FILES = 3
+HISTORY_MAX_MESSAGES = 4
+HISTORY_MESSAGE_MAX_CHARS = 500
+ROWS_MAX_CHARS = 6000
 
 TASK_QUESTION_RE = re.compile(
     r"\b(?:task|tasks|任务)\b",
@@ -146,6 +150,23 @@ NON_NAME_WORD_PATTERN = re.compile(
     r"spend|cost|estimate|predict|forecast)\b",
     re.IGNORECASE,
 )
+
+
+class AgentState(TypedDict, total=False):
+    """State shared by the regular Neo4j query workflow."""
+
+    question: str
+    history: list[dict[str, Any]]
+    schema: dict[str, Any]
+    domain_context: str
+    cypher: str
+    rows: list[dict[str, Any]]
+    error: str | None
+    repair_attempts: int
+    usage: dict[str, int]
+    answer: str
+    visualization: dict[str, Any] | None
+    presentation_warning: str | None
 
 
 def _extract_cypher(text: str) -> str:
@@ -653,13 +674,30 @@ def _compact_live_schema(schema: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def generate_cypher(question: str, schema: dict[str, Any], history: list[dict[str, str]] | None = None) -> tuple[str, dict[str, int]]:
+def _history_for_prompt(history: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        f"{message['role']}: {str(message['content'])[:HISTORY_MESSAGE_MAX_CHARS]}"
+        for message in history[-HISTORY_MAX_MESSAGES:]
+        if message.get("role") and message.get("content")
+    )
+
+
+def generate_cypher(
+    question: str,
+    schema: dict[str, Any],
+    domain_context: str | list[dict[str, Any]] | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> tuple[str, dict[str, int]]:
+    # Keep the pre-graph positional API working for callers that passed history
+    # as the third argument.
+    if isinstance(domain_context, list):
+        history = domain_context
+        domain_context = None
     schema_text = json.dumps(_compact_live_schema(schema), ensure_ascii=False, indent=2)
-    domain_context = _build_domain_context(question)
+    prompt_context = domain_context or _build_domain_context(question)
     history_text = ""
     if history:
-        recent = history[-6:]
-        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in recent)
+        history_text = _history_for_prompt(history)
 
     system = """You are a DID Neo4j Cypher expert. Rewrite the user's question into one read-only Cypher query based on the given schema and domain examples.
 Rules:
@@ -683,7 +721,7 @@ Rules:
 {schema_text}
 
 Domain context:
-{domain_context}
+{prompt_context}
 
 Conversation history:
 {history_text or '(none)'}
@@ -696,7 +734,13 @@ Generate a read-only Cypher query."""
     return expand_legacy_task_properties(_extract_cypher(raw)), usage
 
 
-def repair_cypher(question: str, schema: dict[str, Any], previous_cypher: str, previous_rows: list[dict[str, Any]], history: list[dict[str, str]] | None = None) -> tuple[str, dict[str, int]]:
+def repair_cypher(
+    question: str,
+    schema: dict[str, Any],
+    previous_cypher: str,
+    failure: str | list[dict[str, Any]],
+    history: list[dict[str, Any]] | None = None,
+) -> tuple[str, dict[str, int]]:
     schema_text = json.dumps(_compact_live_schema(schema), ensure_ascii=False, indent=2)
     history_text = ""
     if history:
@@ -727,7 +771,9 @@ User question: {question}
 Previous Cypher:
 {previous_cypher}
 
-Previous query returned zero rows.
+Execution outcome: {
+    failure if isinstance(failure, str) else "The query returned zero rows."
+}
 
 Use the schema and business intent to repair the query so it returns the expected data for the asked period.
 
@@ -737,6 +783,19 @@ Generate a corrected read-only Cypher query."""
     return expand_legacy_task_properties(_extract_cypher(raw)), usage
 
 
+def _rows_for_prompt(rows: list[dict[str, Any]]) -> str:
+    """Serialize complete rows without exceeding the prompt budget."""
+    selected: list[dict[str, Any]] = []
+    for row in rows:
+        candidate = json.dumps(
+            [*selected, row], ensure_ascii=False, default=str, separators=(",", ":")
+        )
+        if len(candidate) > ROWS_MAX_CHARS:
+            break
+        selected.append(row)
+    return json.dumps(selected, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
 def answer_from_rows(
     question: str,
     cypher: str,
@@ -744,7 +803,7 @@ def answer_from_rows(
     *,
     structured_presentation: bool = False,
 ) -> tuple[str, dict[str, int]]:
-    payload = json.dumps(rows[:80], ensure_ascii=False, default=str)
+    payload = _rows_for_prompt(rows)
     wants_breakdown = _wants_delivery_breakdown(question)
     if wants_breakdown:
         detail_rule = (
@@ -832,7 +891,130 @@ def _graph_for_cypher(cypher: str) -> dict[str, Any]:
     return {}
 
 
-def ask(
+def _add_state_usage(state: AgentState, extra_usage: dict[str, int]) -> dict[str, int]:
+    return add_usage(state.get("usage", empty_usage()), extra_usage)
+
+
+def _prepare(state: AgentState) -> AgentState:
+    schema = state.get("schema") or get_schema()
+    return {
+        "schema": schema,
+        "domain_context": _build_domain_context(state["question"]),
+        "usage": state.get("usage", empty_usage()),
+        "repair_attempts": 0,
+        "error": None,
+    }
+
+
+def _generate(state: AgentState) -> AgentState:
+    cypher, usage = generate_cypher(
+        state["question"],
+        state["schema"],
+        state["domain_context"],
+        state.get("history"),
+    )
+    return {"cypher": cypher, "usage": _add_state_usage(state, usage), "error": None}
+
+
+def _execute(state: AgentState) -> AgentState:
+    try:
+        return {"rows": run_cypher(state["cypher"]), "error": None}
+    except Exception as exc:
+        return {"rows": [], "error": str(exc)}
+
+
+def _repair(state: AgentState) -> AgentState:
+    failure = state["error"] or "The query returned zero rows."
+    cypher, usage = repair_cypher(
+        state["question"], state["schema"], state["cypher"], failure
+    )
+    return {
+        "cypher": cypher,
+        "usage": _add_state_usage(state, usage),
+        "repair_attempts": state.get("repair_attempts", 0) + 1,
+        "error": None,
+    }
+
+
+def _empty_answer(question: str) -> str:
+    if re.search(r"[\u4e00-\u9fff]", question):
+        return "未找到匹配的数据。请检查研究/交付标识符或筛选条件。"
+    return "No matching data was found. Please check the study or delivery identifier and filters."
+
+
+def _answer(state: AgentState) -> AgentState:
+    rows = state.get("rows", [])
+    if not rows:
+        return {"answer": _empty_answer(state["question"])}
+
+    if _wants_delivery_breakdown(state["question"]):
+        visualization, presentation_usage, presentation_warning = (
+            _table_visualization(rows),
+            empty_usage(),
+            None,
+        )
+    else:
+        visualization, presentation_usage, presentation_warning = select_result_presentation(
+            state["question"],
+            rows,
+            chat=lambda system, user: _chat(system, user, temperature=0),
+        )
+    updates: AgentState = {
+        "usage": _add_state_usage(state, presentation_usage),
+        "visualization": visualization,
+        "presentation_warning": presentation_warning,
+    }
+    if visualization is not None and not visualization["summary_required"] and not _wants_delivery_breakdown(
+        state["question"]
+    ):
+        answer = ""
+        answer_usage = empty_usage()
+    else:
+        answer, answer_usage = answer_from_rows(
+            state["question"],
+            state["cypher"],
+            rows,
+            structured_presentation=visualization is not None,
+        )
+    updates["answer"] = answer
+    updates["usage"] = add_usage(updates["usage"], answer_usage)
+    return updates
+
+
+def _failure(state: AgentState) -> AgentState:
+    return {"answer": f"Query failed: {state['error']}"}
+
+
+def _after_execute(state: AgentState) -> Literal["repair", "answer", "failure"]:
+    if state.get("error"):
+        return "repair" if state.get("repair_attempts", 0) == 0 else "failure"
+    if not state.get("rows") and state.get("repair_attempts", 0) == 0:
+        return "repair"
+    return "answer"
+
+
+def _build_graph():
+    workflow = StateGraph(AgentState)
+    workflow.add_node("prepare", _prepare)
+    workflow.add_node("generate", _generate)
+    workflow.add_node("execute", _execute)
+    workflow.add_node("repair", _repair)
+    workflow.add_node("answer", _answer)
+    workflow.add_node("failure", _failure)
+    workflow.add_edge(START, "prepare")
+    workflow.add_edge("prepare", "generate")
+    workflow.add_edge("generate", "execute")
+    workflow.add_conditional_edges("execute", _after_execute)
+    workflow.add_edge("repair", "execute")
+    workflow.add_edge("answer", END)
+    workflow.add_edge("failure", END)
+    return workflow.compile()
+
+
+AGENT_GRAPH = _build_graph()
+
+
+def _legacy_ask(
     question: str,
     history: list[dict[str, Any]] | None = None,
     schema: dict[str, Any] | None = None,
@@ -924,4 +1106,61 @@ def ask(
         "usage": usage,
         "case_id": _remember_case(question, cypher, [], last_error),
         "graph": {},
+    }
+
+
+def ask(
+    question: str,
+    history: list[dict[str, Any]] | None = None,
+    schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Route predictions directly and execute standard queries through LangGraph."""
+    load_env()
+    is_prediction, intent_usage = classify_effort_prediction_intent(question, history)
+    if is_prediction:
+        try:
+            result = answer_effort_prediction(
+                question, history, initial_usage=intent_usage
+            )
+            result["schema"] = schema
+            return result
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
+            return {
+                "answer": f"Effort prediction failed: {error}",
+                "cypher": "",
+                "rows": [],
+                "columns": [],
+                "schema": schema,
+                "error": error,
+                "usage": intent_usage,
+                "case_id": None,
+                "graph": {},
+            }
+
+    result = AGENT_GRAPH.invoke(
+        {
+            "question": question,
+            "history": history or [],
+            "schema": schema or {},
+            "usage": intent_usage,
+        }
+    )
+    rows = result.get("rows", [])
+    visualization = result.get("visualization")
+    cypher = result.get("cypher", "")
+    error = result.get("error")
+    return {
+        "answer": result.get("answer", ""),
+        "cypher": cypher,
+        "rows": rows,
+        "columns": list(dict.fromkeys(key for row in rows for key in row)),
+        "schema": result.get("schema", schema),
+        "error": error,
+        "usage": result.get("usage", intent_usage),
+        "visualization": visualization,
+        "table": visualization.get("table") if visualization else None,
+        "presentation_warning": result.get("presentation_warning"),
+        "case_id": _remember_case(question, cypher, rows, error),
+        "graph": _graph_for_cypher(cypher) if not error else {},
     }
