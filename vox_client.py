@@ -43,13 +43,29 @@ def add_usage(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
     }
 
 
+def _env(name: str) -> str:
+    return (os.environ.get(name) or "").strip().strip('"').strip("'")
+
+
+def _require_http_url(name: str) -> str:
+    value = _env(name).rstrip("/")
+    if not value:
+        raise ValueError(f"{name} is empty.")
+    if not value.lower().startswith(("http://", "https://")):
+        raise ValueError(
+            f"{name} must be a full URL starting with https://, not {value!r}. "
+            "Example: https://mule4api-comm-amer.pfizer.com/vox-genai-api-v2"
+        )
+    return value
+
+
 def _vox_configured() -> bool:
     load_env()
     return bool(
-        os.environ.get("VOX_GENAI_API")
-        and os.environ.get("VOX_TOKEN_GEN_URL")
-        and os.environ.get("VOX_CLIENT_ID")
-        and os.environ.get("VOX_CLIENT_SECRET")
+        _env("VOX_GENAI_API")
+        and _env("VOX_TOKEN_GEN_URL")
+        and _env("VOX_CLIENT_ID")
+        and _env("VOX_CLIENT_SECRET")
     )
 
 
@@ -58,9 +74,9 @@ def vox_configured() -> bool:
 
 
 def _describe_vox_error(exc: BaseException, *, stage: str) -> str:
-    api = (os.environ.get("VOX_GENAI_API") or "").rstrip("/")
-    token_url = os.environ.get("VOX_TOKEN_GEN_URL") or ""
-    model = os.environ.get("VOX_MODEL") or "gpt-4o"
+    api = _env("VOX_GENAI_API").rstrip("/")
+    token_url = _env("VOX_TOKEN_GEN_URL")
+    model = _env("VOX_MODEL") or "gpt-4o"
     detail = str(exc).strip() or type(exc).__name__
     if stage == "token":
         return (
@@ -76,9 +92,9 @@ def _describe_vox_error(exc: BaseException, *, stage: str) -> str:
 
 def vox_health() -> dict[str, Any]:
     load_env()
-    api = (os.environ.get("VOX_GENAI_API") or "").rstrip("/")
-    token_url = os.environ.get("VOX_TOKEN_GEN_URL") or ""
-    model = os.environ.get("VOX_MODEL") or "gpt-4o"
+    api = _env("VOX_GENAI_API").rstrip("/")
+    token_url = _env("VOX_TOKEN_GEN_URL")
+    model = _env("VOX_MODEL") or "gpt-4o"
     if not _vox_configured():
         return {
             "ok": False,
@@ -87,6 +103,19 @@ def vox_health() -> dict[str, Any]:
             "api": api or None,
             "model": model,
             "error": "Vox Vars are not set",
+        }
+    try:
+        api = _require_http_url("VOX_GENAI_API")
+        token_url = _require_http_url("VOX_TOKEN_GEN_URL")
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "configured": True,
+            "primary": "vox",
+            "api": api,
+            "token_url": token_url,
+            "model": model,
+            "error": str(exc),
         }
     try:
         get_vox_access_token()
@@ -136,11 +165,11 @@ def get_vox_access_token(force_refresh: bool = False) -> str:
         return str(_token_cache["access_token"])
 
     resp = requests.post(
-        os.environ["VOX_TOKEN_GEN_URL"],
+        _require_http_url("VOX_TOKEN_GEN_URL"),
         data={
             "grant_type": "client_credentials",
-            "client_id": os.environ["VOX_CLIENT_ID"],
-            "client_secret": os.environ["VOX_CLIENT_SECRET"],
+            "client_id": _env("VOX_CLIENT_ID"),
+            "client_secret": _env("VOX_CLIENT_SECRET"),
         },
         timeout=60,
     )
@@ -163,9 +192,9 @@ def build_llm_client() -> tuple[OpenAI, str]:
 
     if _vox_configured():
         token = get_vox_access_token()
-        base = os.environ["VOX_GENAI_API"].rstrip("/")
+        base = _require_http_url("VOX_GENAI_API")
         client = OpenAI(api_key=token, base_url=f"{base}/v1")
-        model = os.environ.get("VOX_MODEL") or "gpt-4o"
+        model = _env("VOX_MODEL") or "gpt-4o"
         return client, model
 
     raise ValueError(
