@@ -281,8 +281,21 @@ def select_result_presentation(
     question: str, rows: list[dict[str, Any]], chat: Chat
 ) -> tuple[dict[str, Any] | None, Usage, str | None]:
     """Select presentation without allowing its failure to invalidate query results."""
-    if not rows or not _field_names(rows):
-        return None, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}, None
+    fields = _field_names(rows)
+    empty_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    if not rows or not fields:
+        return None, empty_usage, None
+    if len(rows) == 1 and len(fields) == 1 and _is_finite_number(rows[0].get(fields[0])):
+        return (
+            {
+                "display_type": "table",
+                "table": _table_payload(rows, fields),
+                "data_note": _data_note(fields),
+                "summary_required": True,
+            },
+            empty_usage,
+            None,
+        )
     try:
         system, user = build_presentation_prompt(question, rows)
         raw, usage = chat(system, user)
@@ -304,6 +317,6 @@ def select_result_presentation(
     ):
         return (
             None,
-            {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            empty_usage,
             "Presentation is unavailable; showing the text answer only.",
         )

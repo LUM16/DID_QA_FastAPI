@@ -11,7 +11,13 @@ from typing import Any
 
 from effort_prediction import person_name_candidates, predict_effort
 from example_memory import format_positive_examples, get_memory
-from neo4j_client import get_schema, last_query_meta, load_env, run_cypher
+from neo4j_client import (
+    expand_legacy_task_properties,
+    get_schema,
+    last_query_meta,
+    load_env,
+    run_cypher,
+)
 from result_presentation import select_result_presentation
 from vox_client import add_usage, chat as _chat, empty_usage
 
@@ -23,7 +29,22 @@ DOCS_ROOT = APP_ROOT / "docs"
 EXAMPLES_ROOT = DOCS_ROOT / "examples"
 
 EXAMPLE_KEYWORDS = {
-    "person_productivity.md": ("person", "productivity", "hands-on", "hour", "workload", "ntid", "员工", "工时"),
+    "person_productivity.md": (
+        "person",
+        "productivity",
+        "hands-on",
+        "hour",
+        "hours",
+        "task",
+        "tasks",
+        "complete",
+        "completed",
+        "workload",
+        "ntid",
+        "员工",
+        "工时",
+        "任务",
+    ),
     "workload_planning.md": ("capacity", "plan", "planned", "ongoing", "workload", "resource", "规划", "负载"),
     "study_delivery.md": ("study", "delivery", "did", "status", "里程碑", "交付"),
     "lot_tlf_sdtm_adam.md": ("lot", "tlf", "sdtm", "adam", "submission", "产出物"),
@@ -59,6 +80,7 @@ SAFE_EXAMPLE_FILES = tuple(
 SKILL_MAX_CHARS = 6000
 SCHEMA_MAX_CHARS = 12000
 EXAMPLE_MAX_CHARS = 5000
+MAX_EXAMPLE_FILES = 3
 
 LANGUAGE_RULE = (
     "Language policy: Match the user's question language. "
@@ -516,7 +538,7 @@ def _read_doc(relative_path: str) -> str:
     return p.read_text(encoding="utf-8")
 
 
-def _select_examples(question: str, limit: int = 3) -> list[str]:
+def _select_examples(question: str, limit: int = MAX_EXAMPLE_FILES) -> list[str]:
     q = question.lower()
     scored: list[tuple[int, str]] = []
     for filename, keywords in EXAMPLE_KEYWORDS.items():
@@ -553,7 +575,7 @@ def _build_domain_context(question: str) -> str:
     if endorsed:
         parts.extend(["", endorsed])
 
-    for filename in (*selected, *[name for name in SAFE_EXAMPLE_FILES if name not in selected]):
+    for filename in selected:
         example_path = EXAMPLES_ROOT / filename
         if not example_path.exists():
             continue
@@ -568,8 +590,16 @@ def _build_domain_context(question: str) -> str:
     return "\n".join(parts)
 
 
+def _compact_live_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "labels": schema.get("labels") or [],
+        "relationshipTypes": schema.get("relationshipTypes") or [],
+        "propertyKeys": schema.get("propertyKeys") or [],
+    }
+
+
 def generate_cypher(question: str, schema: dict[str, Any], history: list[dict[str, str]] | None = None) -> tuple[str, dict[str, int]]:
-    schema_text = json.dumps(schema, ensure_ascii=False, indent=2)
+    schema_text = json.dumps(_compact_live_schema(schema), ensure_ascii=False, indent=2)
     domain_context = _build_domain_context(question)
     history_text = ""
     if history:
@@ -583,13 +613,14 @@ Rules:
 3. Add LIMIT for result sets (default 50) unless the user asks for a count only.
 4. Study identifiers often use IPort_Study or Name (e.g. C1071007). Do not invent property names.
 5. Common pattern: (:Study)-[:HAS_DELIVERY]->(:Delivery).
-6. Use only property keys that appear in schema.propertyKeys.
+6. Use only property keys that appear in schema.propertyKeys or docs/schema.md.
 7. Cypher keywords stay in English; do not translate labels/properties.
 8. Follow rules and safe patterns from docs/skill.md, docs/schema.md, and docs/examples/*.md (ignore sensitive_excluded.md).
 9. Prefer business query patterns from person_productivity.md, workload_planning.md, study_delivery.md, lot_tlf_sdtm_adam.md, team_manager.md, reporting_dashboard.md, and query_index.md.
 10. Do not generate employee ranking/performance-scoring queries.
 11. When user-endorsed thumbs-up examples are provided, prefer those Cypher patterns if they match the question.
-12. For org-chart / reporting-tree questions, prefer the scalar template columns person, reporting_level, reports_to, status so the UI can render both a table and an organization chart."""
+12. For org-chart / reporting-tree questions, prefer the scalar template columns person, reporting_level, reports_to, status so the UI can render both a table and an organization chart.
+13. WORKS_ON has no Task_Num_Total. Person task totals must be coalesce(toFloat(w.CSR_Task_Num_Total),0)+coalesce(toFloat(w.SDA_Task_Num_Total),0)+coalesce(toFloat(w.STD_Task_Num_Total),0)+coalesce(toFloat(w.esub_Data_Num_Total),0)."""
 
     user = f"""Schema:
 {schema_text}
@@ -605,11 +636,11 @@ User question: {question}
 Generate a read-only Cypher query."""
 
     raw, usage = _chat(system, user)
-    return _extract_cypher(raw), usage
+    return expand_legacy_task_properties(_extract_cypher(raw)), usage
 
 
 def repair_cypher(question: str, schema: dict[str, Any], previous_cypher: str, previous_rows: list[dict[str, Any]], history: list[dict[str, str]] | None = None) -> tuple[str, dict[str, int]]:
-    schema_text = json.dumps(schema, ensure_ascii=False, indent=2)
+    schema_text = json.dumps(_compact_live_schema(schema), ensure_ascii=False, indent=2)
     history_text = ""
     if history:
         recent = history[-6:]
@@ -624,7 +655,8 @@ Rules:
 5. When the question mentions a month or year, apply the filter to the date field and keep it aligned with the user’s requested period.
 6. Preserve the original business intent and return the relevant rows.
 7. Prefer the safe patterns from docs/skill.md and docs/examples/*.md (skip sensitive_excluded.md).
-8. Never use CREATE/MERGE/DELETE/SET/REMOVE/DROP or other write operations."""
+8. Never use CREATE/MERGE/DELETE/SET/REMOVE/DROP or other write operations.
+9. Never use Task_Num_Total; expand person tasks into CSR_Task_Num_Total + SDA_Task_Num_Total + STD_Task_Num_Total + esub_Data_Num_Total."""
 
     user = f"""Schema:
 {schema_text}
@@ -644,7 +676,7 @@ Use the schema and business intent to repair the query so it returns the expecte
 Generate a corrected read-only Cypher query."""
 
     raw, usage = _chat(system, user)
-    return _extract_cypher(raw), usage
+    return expand_legacy_task_properties(_extract_cypher(raw)), usage
 
 
 def answer_from_rows(

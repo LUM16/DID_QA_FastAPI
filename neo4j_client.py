@@ -32,9 +32,33 @@ FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 _LIMIT_RE = re.compile(r"\bLIMIT\s+\d+\b", re.IGNORECASE)
+_LEGACY_TASK_PROP = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\.(Task_Num_Total|Task_Num_Generation|Task_Num_QC)\b"
+)
+_LEGACY_TASK_MAP = {
+    "Task_Num_Total": (
+        "CSR_Task_Num_Total",
+        "SDA_Task_Num_Total",
+        "STD_Task_Num_Total",
+        "esub_Data_Num_Total",
+    ),
+    "Task_Num_Generation": (
+        "CSR_Task_Num_Generation",
+        "SDA_Task_Num_Generation",
+        "STD_Task_Num_Generation",
+        "esub_Data_Num_Generation",
+    ),
+    "Task_Num_QC": (
+        "CSR_Task_Num_QC",
+        "SDA_Task_Num_QC",
+        "STD_Task_Num_QC",
+        "esub_Data_Num_QC",
+    ),
+}
 _TITLE_KEYS = ("Name", "name", "DID", "Title", "Email", "NTID", "Milestone", "Category", "id")
 MAX_EXPORT_ROWS = 20000
 _LAST_META: dict[str, Any] = {}
+_SCHEMA_CACHE: dict[str, Any] | None = None
 
 
 def load_env() -> None:
@@ -63,6 +87,20 @@ def get_driver():
     if not password:
         raise ValueError("NEO4J_PASSWORD is not set (use Connect Vars or .env).")
     return GraphDatabase.driver(uri, auth=(user, password))
+
+
+def expand_legacy_task_properties(query: str) -> str:
+    """Rewrite obsolete WORKS_ON task fields into the current CSR/SDA/STD/esub split."""
+
+    def repl(match: re.Match[str]) -> str:
+        alias, field = match.group(1), match.group(2)
+        parts = [
+            f"coalesce(toFloat({alias}.{name}), 0.0)"
+            for name in _LEGACY_TASK_MAP[field]
+        ]
+        return "(" + " + ".join(parts) + ")"
+
+    return _LEGACY_TASK_PROP.sub(repl, query)
 
 
 def ensure_read_only(query: str) -> str:
@@ -230,7 +268,10 @@ def run_cypher(query: str, limit_rows: int = 200) -> list[dict[str, Any]]:
     return run_cypher_with_meta(query, max_rows=limit_rows)["rows"]
 
 
-def get_schema() -> dict[str, Any]:
+def get_schema(*, force: bool = False, include_counts: bool = False) -> dict[str, Any]:
+    global _SCHEMA_CACHE
+    if not force and not include_counts and _SCHEMA_CACHE is not None:
+        return _SCHEMA_CACHE
     load_env()
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
     driver = get_driver()
@@ -254,20 +295,29 @@ def get_schema() -> dict[str, Any]:
                     "RETURN propertyKey ORDER BY propertyKey"
                 )
             ]
-            counts = {}
-            for label in labels[:20]:
-                counts[label] = session.run(
-                    f"MATCH (n:`{label}`) RETURN count(n) AS c"
-                ).single()["c"]
+            counts: dict[str, Any] = {}
+            if include_counts:
+                for label in labels[:20]:
+                    counts[label] = session.run(
+                        f"MATCH (n:`{label}`) RETURN count(n) AS c"
+                    ).single()["c"]
 
-            return {
+            payload = {
                 "labels": labels,
                 "relationshipTypes": rel_types,
                 "propertyKeys": props[:100],
                 "nodeCountsByLabel": counts,
             }
+            if not include_counts:
+                _SCHEMA_CACHE = payload
+            return payload
     finally:
         driver.close()
+
+
+def clear_schema_cache() -> None:
+    global _SCHEMA_CACHE
+    _SCHEMA_CACHE = None
 
 
 def connection_summary() -> str:

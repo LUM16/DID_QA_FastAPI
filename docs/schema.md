@@ -41,7 +41,11 @@ Properties:
 - `SDTM_Num`
 - `ADAM_Num`
 - `TLF_Num`
-- `Task_Num`
+- `CSR_TLF_Num`
+- `CSR_Task_Num`
+- `SDA_Task_Num`
+- `STD_Task_Num`
+- `esub_Task_Data_Num`
 - `Year`
 - `Month`
 - `ID_in_Portfolio_Milestone_list1`
@@ -49,7 +53,6 @@ Properties:
 - `ID_in_Portfolio_Milestone_list3`
 - `ID_in_Portfolio_Milestone_list4`
 - `ID_in_Portfolio_Milestone_list5`
-- `Total_Task_Num`
 
 ### Study_Info
 
@@ -221,18 +224,11 @@ Properties:
 (Person)-[:FROM_SITE]->(Site)
 (Person)-[:REPORTS_TO]->(Person)
 (Person)-[:WORKS_ON {
-  TLF_Num_Total,
-  TLF_Num_Generation,
-  TLF_Num_QC,
-  ADaM_Num_Total,
-  ADaM_Num_Generation,
-  ADaM_Num_QC,
-  SDTM_Num_Total,
-  SDTM_Num_Generation,
-  SDTM_Num_QC,
-  Task_Num_Total,
-  Task_Num_Generation,
-  Task_Num_QC
+  CSR_Task_Num_Total, CSR_Task_Num_Generation, CSR_Task_Num_QC,
+  SDA_Task_Num_Total, SDA_Task_Num_Generation, SDA_Task_Num_QC,
+  STD_Task_Num_Total, STD_Task_Num_Generation, STD_Task_Num_QC,
+  esub_Data_Num_Total, esub_Data_Num_Generation, esub_Data_Num_QC,
+  CSR_TLF_Num_Total, CSR_ADaM_Num_Total, CSR_SDTM_Num_Total
 }]->(Delivery)
 (Person)-[:LEADS_SUBMISSION]->(Submission)
 ```

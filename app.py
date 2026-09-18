@@ -22,6 +22,7 @@ from neo4j_client import (
     ensure_read_only,
     get_driver,
     get_schema,
+    clear_schema_cache,
     load_env,
     raise_limit,
     run_cypher_with_meta,
@@ -192,7 +193,8 @@ def stats() -> dict[str, Any]:
 def refresh_schema() -> dict[str, Any]:
     try:
         _read_doc.cache_clear()
-        return get_schema()
+        clear_schema_cache()
+        return get_schema(force=True, include_counts=True)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
