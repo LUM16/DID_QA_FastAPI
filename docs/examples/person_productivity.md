@@ -2,6 +2,44 @@
 
 > Use these as few-shot examples for DID Agent Text-to-Cypher. Replace parameter placeholders before execution.
 
+## q000: How many tasks did a person complete in a month?
+
+**Business intent**  
+List each completed delivery in the month with CSR/SDA/STD/eSub task counts. Do not return only a grand total.
+
+**Parameters**
+
+```json
+{
+  "person": "Lu, Manman",
+  "startDate": "2026-08-01",
+  "endDate": "2026-09-01"
+}
+```
+
+**Cypher**
+
+```cypher
+MATCH (p:Person)-[w:WORKS_ON]->(d:Delivery)
+WHERE replace(toUpper(p.Name), " ", "") = replace(toUpper("{{person:Person name}}"), " ", "")
+  AND d.DID_Status = "Completed"
+  AND d.Actual_Delivery_Date >= date('{{startDate:Start date}}')
+  AND d.Actual_Delivery_Date < date('{{endDate:End date}}')
+RETURN d.Name AS Delivery,
+       d.DID AS DID,
+       d.DID_Status AS Status,
+       d.Deliverable_Detail AS Deliverable_Detail,
+       d.Reporting_Detail AS Reporting_Detail,
+       d.Actual_Delivery_Date AS Actual_Delivery_Date,
+       d.Planned_Delivery_Date AS Planned_Delivery_Date,
+       coalesce(toFloat(w.CSR_Task_Num_Total), 0.0) AS CSR,
+       coalesce(toFloat(w.SDA_Task_Num_Total), 0.0) AS SDA,
+       coalesce(toFloat(w.STD_Task_Num_Total), 0.0) AS STD,
+       coalesce(toFloat(w.esub_Data_Num_Total), 0.0) AS eSub
+ORDER BY d.Actual_Delivery_Date, d.Name
+LIMIT 50
+```
+
 ## q001: Summarize the my deliveries during a certain time period
 
 **Business intent**  

@@ -196,7 +196,7 @@ class ResultPresentationTests(unittest.TestCase):
             "agent.classify_effort_prediction_intent",
             return_value=(False, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}),
         ):
-            result = agent.ask("List study delivery counts", schema={"labels": []})
+            result = agent.ask("Show monthly hours by study", schema={"labels": []})
 
         self.assertIsNone(result["error"])
         self.assertEqual(result["answer"], "C100 has two deliveries.")

@@ -18,7 +18,7 @@ from neo4j_client import (
     load_env,
     run_cypher,
 )
-from result_presentation import select_result_presentation
+from result_presentation import select_result_presentation, table_from_rows
 from vox_client import add_usage, chat as _chat, empty_usage
 
 log = logging.getLogger(__name__)
@@ -81,6 +81,22 @@ SKILL_MAX_CHARS = 6000
 SCHEMA_MAX_CHARS = 12000
 EXAMPLE_MAX_CHARS = 5000
 MAX_EXAMPLE_FILES = 3
+
+TASK_QUESTION_RE = re.compile(
+    r"\b(?:task|tasks|任务)\b",
+    re.IGNORECASE,
+)
+DELIVERY_QUESTION_RE = re.compile(
+    r"(?:deliver(?:y|ies)|交付)",
+    re.IGNORECASE,
+)
+TASK_CATEGORY_FIELDS = ("CSR", "SDA", "STD", "eSub")
+TASK_CATEGORY_LABELS = {
+    "CSR": "CSR",
+    "SDA": "SDA",
+    "STD": "STD",
+    "eSub": "eSub",
+}
 
 LANGUAGE_RULE = (
     "Language policy: Match the user's question language. "
@@ -530,6 +546,45 @@ def answer_effort_prediction(
     }
 
 
+def _is_task_question(question: str) -> bool:
+    return bool(TASK_QUESTION_RE.search(question or ""))
+
+
+def _is_delivery_question(question: str) -> bool:
+    return bool(DELIVERY_QUESTION_RE.search(question or ""))
+
+
+def _wants_delivery_breakdown(question: str) -> bool:
+    return _is_task_question(question) or _is_delivery_question(question)
+
+
+def _drop_zero_task_columns(
+    rows: list[dict[str, Any]], fields: list[str]
+) -> list[str]:
+    kept: list[str] = []
+    for field in fields:
+        if field not in TASK_CATEGORY_FIELDS:
+            kept.append(field)
+            continue
+        if any(
+            isinstance(row.get(field), (int, float)) and float(row.get(field) or 0) != 0.0
+            for row in rows
+        ):
+            kept.append(field)
+    return kept
+
+
+def _table_visualization(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    fields = list(dict.fromkeys(key for row in rows for key in row))
+    fields = _drop_zero_task_columns(rows, fields)
+    return {
+        "display_type": "table",
+        "table": table_from_rows(rows, fields),
+        "data_note": None,
+        "summary_required": True,
+    }
+
+
 @lru_cache(maxsize=64)
 def _read_doc(relative_path: str) -> str:
     p = DOCS_ROOT / relative_path
@@ -610,7 +665,7 @@ def generate_cypher(question: str, schema: dict[str, Any], history: list[dict[st
 Rules:
 1. Output exactly one Cypher statement inside a ```cypher code block.
 2. Never use CREATE/MERGE/DELETE/SET/REMOVE/DROP or other write operations.
-3. Add LIMIT for result sets (default 50) unless the user asks for a count only.
+3. Add LIMIT for result sets (default 50). Task and delivery questions are never count-only: always return one row per Delivery.
 4. Study identifiers often use IPort_Study or Name (e.g. C1071007). Do not invent property names.
 5. Common pattern: (:Study)-[:HAS_DELIVERY]->(:Delivery).
 6. Use only property keys that appear in schema.propertyKeys or docs/schema.md.
@@ -620,7 +675,9 @@ Rules:
 10. Do not generate employee ranking/performance-scoring queries.
 11. When user-endorsed thumbs-up examples are provided, prefer those Cypher patterns if they match the question.
 12. For org-chart / reporting-tree questions, prefer the scalar template columns person, reporting_level, reports_to, status so the UI can render both a table and an organization chart.
-13. WORKS_ON has no Task_Num_Total. Person task totals must be coalesce(toFloat(w.CSR_Task_Num_Total),0)+coalesce(toFloat(w.SDA_Task_Num_Total),0)+coalesce(toFloat(w.STD_Task_Num_Total),0)+coalesce(toFloat(w.esub_Data_Num_Total),0)."""
+13. WORKS_ON has no Task_Num_Total.
+14. If the user asks about tasks, return one row per Delivery with aliases Delivery, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date, CSR, SDA, STD, eSub. CSR/SDA/STD/eSub must be the four WORKS_ON task totals. Do not return only SUM() as a single total. Do not alias columns to raw names like CSR_Task_Num_Total.
+15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count."""
 
     user = f"""Schema:
 {schema_text}
@@ -656,7 +713,8 @@ Rules:
 6. Preserve the original business intent and return the relevant rows.
 7. Prefer the safe patterns from docs/skill.md and docs/examples/*.md (skip sensitive_excluded.md).
 8. Never use CREATE/MERGE/DELETE/SET/REMOVE/DROP or other write operations.
-9. Never use Task_Num_Total; expand person tasks into CSR_Task_Num_Total + SDA_Task_Num_Total + STD_Task_Num_Total + esub_Data_Num_Total."""
+9. Never use Task_Num_Total.
+10. Task and delivery questions must return one row per Delivery, not a single total."""
 
     user = f"""Schema:
 {schema_text}
@@ -687,21 +745,34 @@ def answer_from_rows(
     structured_presentation: bool = False,
 ) -> tuple[str, dict[str, int]]:
     payload = json.dumps(rows[:80], ensure_ascii=False, default=str)
-    detail_rule = (
-        "A validated chart or table will render the row details separately. Give only "
-        "a direct, concise conclusion in at most two sentences; do not output a "
-        "markdown table, list, or repeat individual rows."
-        if structured_presentation
-        else "For multiple rows, use a concise list or table-style markdown."
-    )
+    wants_breakdown = _wants_delivery_breakdown(question)
+    if wants_breakdown:
+        detail_rule = (
+            "List each matching delivery. Never answer with only a grand total. "
+            "For task amounts use the business labels CSR, SDA, STD, and eSub; "
+            "omit any of those four that are 0 or null. Do not mention raw graph "
+            "property names such as CSR_Task_Num_Total, SDA_Task_Num_Total, "
+            "STD_Task_Num_Total, or esub_Data_Num_Total. "
+            "Include DID_Status, Deliverable_Detail, and Reporting_Detail when present. "
+            "Use Actual_Delivery_Date for completed deliveries and Planned_Delivery_Date "
+            "for Ongoing or Planned deliveries."
+        )
+    elif structured_presentation:
+        detail_rule = (
+            "A validated chart or table will render the row details separately. Give only "
+            "a direct, concise conclusion in at most two sentences; do not output a "
+            "markdown table, list, or repeat individual rows."
+        )
+    else:
+        detail_rule = "For multiple rows, use a concise list or table-style markdown."
     system = f"""You are a Neo4j graph Q&A assistant. Answer from the query results in clear natural language.
 Rules:
 1. {LANGUAGE_RULE}
-2. Lead with the direct answer, then add brief supporting detail if useful.
+2. Lead with a short total or count if it helps, then list the supporting deliveries.
 3. Never invent data that is not in the results.
 4. If results are empty, explain likely reasons (wrong ID, property name, or no matching data).
 5. {detail_rule}
-6. Keep property/field names from the database as-is when citing them."""
+6. Prefer business names over database field names."""
 
     user = f"""User question: {question}
 
@@ -803,13 +874,17 @@ def ask(
                 rows = run_cypher(repaired)
                 cypher = repaired
 
-            visualization, presentation_usage, presentation_warning = select_result_presentation(
-                question,
-                rows,
-                chat=lambda system, user: _chat(system, user, temperature=0),
-            )
+            if _wants_delivery_breakdown(question) and rows:
+                visualization = _table_visualization(rows)
+                presentation_usage, presentation_warning = empty_usage(), None
+            else:
+                visualization, presentation_usage, presentation_warning = select_result_presentation(
+                    question,
+                    rows,
+                    chat=lambda system, user: _chat(system, user, temperature=0),
+                )
             usage = add_usage(usage, presentation_usage)
-            if visualization is not None and not visualization["summary_required"]:
+            if visualization is not None and not visualization["summary_required"] and not _wants_delivery_breakdown(question):
                 answer = ""
             else:
                 answer, u2 = answer_from_rows(

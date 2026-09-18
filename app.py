@@ -130,6 +130,7 @@ def insight_payload(result: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
     answer = result.get("answer") or ""
     if error and not answer:
         answer = str(error)
+    usage = result.get("usage") or {}
     return {
         "answer": answer,
         "cypher": cypher,
@@ -146,6 +147,10 @@ def insight_payload(result: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
         "attempts": attempts,
         "elapsed_ms": elapsed_ms,
         "error": error,
+        "usage": jsonable(usage),
+        "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+        "completion_tokens": int(usage.get("completion_tokens") or 0),
+        "total_tokens": int(usage.get("total_tokens") or 0),
         "prediction": jsonable(result.get("prediction")) if result.get("prediction") else None,
     }
 
