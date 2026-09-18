@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -13,6 +14,8 @@ from example_memory import format_positive_examples, get_memory
 from neo4j_client import get_schema, last_query_meta, load_env, run_cypher
 from result_presentation import select_result_presentation
 from vox_client import add_usage, chat as _chat, empty_usage
+
+log = logging.getLogger(__name__)
 
 CYPHER_BLOCK = re.compile(r"```(?:cypher)?\s*([\s\S]*?)```", re.IGNORECASE)
 APP_ROOT = Path(__file__).resolve().parent
@@ -802,6 +805,7 @@ def ask(
             }
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
+            log.exception("Query attempt %s failed: %s", _attempt + 1, last_error)
 
     return {
         "answer": f"Query failed after 3 attempts: {last_error}",

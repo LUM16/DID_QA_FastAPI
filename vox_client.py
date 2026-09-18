@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Any
@@ -10,6 +11,8 @@ import requests
 from openai import OpenAI
 
 from neo4j_client import load_env
+
+log = logging.getLogger(__name__)
 
 _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
 
@@ -52,6 +55,74 @@ def _vox_configured() -> bool:
 
 def vox_configured() -> bool:
     return _vox_configured()
+
+
+def _describe_vox_error(exc: BaseException, *, stage: str) -> str:
+    api = (os.environ.get("VOX_GENAI_API") or "").rstrip("/")
+    token_url = os.environ.get("VOX_TOKEN_GEN_URL") or ""
+    model = os.environ.get("VOX_MODEL") or "gpt-4o"
+    detail = str(exc).strip() or type(exc).__name__
+    if stage == "token":
+        return (
+            f"Vox token request failed for {token_url}. "
+            f"Original error: {detail}"
+        )
+    return (
+        f"Vox chat API unreachable at {api} (model {model}). "
+        "Neo4j can be fine while this still fails. "
+        f"Original error: {detail}"
+    )
+
+
+def vox_health() -> dict[str, Any]:
+    load_env()
+    api = (os.environ.get("VOX_GENAI_API") or "").rstrip("/")
+    token_url = os.environ.get("VOX_TOKEN_GEN_URL") or ""
+    model = os.environ.get("VOX_MODEL") or "gpt-4o"
+    if not _vox_configured():
+        return {
+            "ok": False,
+            "configured": False,
+            "primary": None,
+            "api": api or None,
+            "model": model,
+            "error": "Vox Vars are not set",
+        }
+    try:
+        get_vox_access_token()
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Vox health: token request failed")
+        return {
+            "ok": False,
+            "configured": True,
+            "primary": "vox",
+            "api": api,
+            "token_url": token_url,
+            "model": model,
+            "error": _describe_vox_error(exc, stage="token"),
+        }
+    try:
+        models_vox_genai()
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Vox health: chat API unreachable")
+        return {
+            "ok": False,
+            "configured": True,
+            "primary": "vox",
+            "api": api,
+            "token_url": token_url,
+            "model": model,
+            "error": _describe_vox_error(exc, stage="chat"),
+        }
+    return {
+        "ok": True,
+        "configured": True,
+        "primary": "vox",
+        "api": api,
+        "token_url": token_url,
+        "model": model,
+        "error": None,
+    }
 
 
 def get_vox_access_token(force_refresh: bool = False) -> str:
@@ -135,15 +206,20 @@ def chat(system: str, user: str, temperature: float = 0.1) -> tuple[str, dict[st
         )
     except Exception as first_err:
         if _vox_configured() and "401" in str(first_err):
-            get_vox_access_token(force_refresh=True)
-            client, model = build_llm_client()
-            resp = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-            )
+            try:
+                get_vox_access_token(force_refresh=True)
+                client, model = build_llm_client()
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                )
+            except Exception as retry_err:
+                log.exception("Vox chat failed after 401 retry")
+                raise RuntimeError(_describe_vox_error(retry_err, stage="chat")) from retry_err
         else:
-            raise
+            log.exception("Vox chat failed")
+            raise RuntimeError(_describe_vox_error(first_err, stage="chat")) from first_err
 
     text = (resp.choices[0].message.content or "").strip()
     return text, _usage_from_response(resp)

@@ -740,10 +740,16 @@ async function ask(preset){
 async function refreshHealth(){
   try{
     const h=await api('/health');const neo=h.neo4j&&h.neo4j.ok;
-    const prov=h.llm&&h.llm.primary;
+    const llm=h.llm||{};
+    const llmOk=!!llm.ok;
+    const prov=llm.primary||'?';
     const neoErr=(!neo&&h.neo4j&&h.neo4j.error)?String(h.neo4j.error):'';
-    $('#health').title=neo?(h.neo4j.uri||''):(neoErr||'Neo4j unreachable');
-    $('#health').innerHTML=`<span class="dot ${neo?'ok':'bad'}"></span>Neo4j ${neo?'connected':'disconnected'} · LLM: ${esc(prov||'?')}`;
+    const llmErr=(!llmOk&&llm.error)?String(llm.error):'';
+    const tips=[neo?(h.neo4j.uri||'Neo4j connected'):(neoErr||'Neo4j unreachable')];
+    if(llmOk) tips.push(llm.api||'Vox reachable');
+    else tips.push(llmErr||'Vox unreachable');
+    $('#health').title=tips.join('\n');
+    $('#health').innerHTML=`<span class="dot ${neo?'ok':'bad'}"></span>Neo4j ${neo?'connected':'disconnected'} · <span class="dot ${llmOk?'ok':'bad'}"></span>LLM: ${esc(llmOk?prov:prov+' unreachable')}`;
   }catch(e){$('#health').innerHTML='<span class="dot bad"></span>Health check failed';}
 }
 

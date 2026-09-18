@@ -26,7 +26,7 @@ from neo4j_client import (
     raise_limit,
     run_cypher_with_meta,
 )
-from vox_client import vox_configured
+from vox_client import vox_health
 
 STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 MAX_EXPORT_ROWS = 20000
@@ -176,10 +176,7 @@ def health() -> dict[str, Any]:
     load_env()
     return {
         "neo4j": neo4j_health(),
-        "llm": {
-            "primary": "vox" if vox_configured() else None,
-            "configured": vox_configured(),
-        },
+        "llm": vox_health(),
     }
 
 
