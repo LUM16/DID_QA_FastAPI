@@ -1,8 +1,0 @@
-.env
-.env.local
-__pycache__/
-*.pyc
-.streamlit/
-.posit/
-.venv/
-venv/
