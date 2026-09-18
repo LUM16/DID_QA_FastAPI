@@ -156,11 +156,6 @@ class ResultPresentationTests(unittest.TestCase):
         self.assertEqual(mock_chat.call_count, 2)
         self.assertEqual(result["answer"], "")
         self.assertIsNotNone(result["visualization"])
-        self.assertEqual(
-            set(result["timings_ms"]),
-            {"intent", "prepare", "cypher_generation", "neo4j", "presentation"},
-        )
-        self.assertTrue(all(value >= 0 for value in result["timings_ms"].values()))
 
     @patch("agent.run_cypher", return_value=[{"month": "2026-09", "hours": 5.0}])
     @patch("agent._chat")

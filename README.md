@@ -134,11 +134,6 @@ chart always includes a table fallback; a selection failure simply omits
 presentation and never fails an otherwise successful Q&A response. See
 [`docs/post_query_presentation.md`](docs/post_query_presentation.md).
 
-The `/api/query` response includes `elapsed_ms` for end-to-end latency and a
-`timings_ms` object with the applicable pipeline stages, such as intent routing,
-prompt preparation, Cypher generation, Neo4j execution, repair, presentation,
-and answer generation. The chat UI exposes these values under **Stage timings**.
-
 Prediction requests continue with their separate LLM-first parameter extraction,
 Neo4j validation, and V3 model calculation. Python computes P50/P80/P90; the
 LLM does not calculate or alter prediction values.

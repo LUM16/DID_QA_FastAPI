@@ -213,11 +213,6 @@ class AgentPredictionTests(unittest.TestCase):
         self.assertIn("SDTM 相似度 100%", result["answer"])
         self.assertNotIn("总体相似度", result["answer"])
         self.assertEqual(result["usage"]["total_tokens"], 6)
-        self.assertEqual(
-            set(result["timings_ms"]),
-            {"intent", "prediction_parameters", "prediction_model", "answer_generation"},
-        )
-        self.assertTrue(all(value >= 0 for value in result["timings_ms"].values()))
 
     @patch("agent.person_name_candidates", return_value=["Chen, Zhenchao (Riven)"])
     @patch("agent._chat")

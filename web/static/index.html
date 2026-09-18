@@ -318,7 +318,6 @@ function addResult(r){
       ${confBadge(r.confidence)}
       <span>${esc(r.provider||'')}${r.model?' / '+esc(r.model):''}${r.fallback_used?' (fallback)':''}</span>
       <span>· attempts ${(r.attempts||[]).length} · ${r.row_count} rows · ${r.elapsed_ms}ms · ${Number(r.total_tokens||((r.usage||{}).total_tokens)||0).toLocaleString()} tokens (${Number(r.prompt_tokens||((r.usage||{}).prompt_tokens)||0).toLocaleString()} in / ${Number(r.completion_tokens||((r.usage||{}).completion_tokens)||0).toLocaleString()} out)</span>
-      ${r.timings_ms?`<details><summary>Stage timings</summary><div class="inner"><pre><code>${esc(Object.entries(r.timings_ms).map(([stage,ms])=>`${stage}: ${ms}ms`).join('\n'))}</code></pre></div></details>`:''}
     </div>
     ${renderMarkdown(r.answer)}
     ${r.cypher?`<details><summary>🔍 Final Cypher</summary><div class="inner"><pre><code>${esc(r.cypher)}</code></pre></div></details>`:''}

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -168,19 +167,6 @@ class AgentState(TypedDict, total=False):
     answer: str
     visualization: dict[str, Any] | None
     presentation_warning: str | None
-    timings_ms: dict[str, int]
-
-
-def _elapsed_ms(started: float) -> int:
-    return max(0, round((time.perf_counter() - started) * 1000))
-
-
-def _add_timing(
-    state: AgentState, stage: str, started: float
-) -> dict[str, int]:
-    timings = dict(state.get("timings_ms", {}))
-    timings[stage] = timings.get(stage, 0) + _elapsed_ms(started)
-    return timings
 
 
 def _extract_cypher(text: str) -> str:
@@ -558,34 +544,22 @@ def answer_effort_prediction(
     question: str,
     history: list[dict[str, Any]] | None = None,
     initial_usage: dict[str, int] | None = None,
-    initial_timings: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    timings = dict(initial_timings or {})
-    started = time.perf_counter()
     parameters, usage = extract_effort_prediction_parameters(question, history)
-    timings["prediction_parameters"] = _elapsed_ms(started)
-
-    started = time.perf_counter()
     prediction = predict_effort(
         person=str(parameters["person"]),
         did=str(parameters["did"]),
         as_of_date=parameters["as_of_date"],
     )
-    timings["prediction_model"] = _elapsed_ms(started)
-
-    started = time.perf_counter()
-    answer = _format_effort_prediction(
-        prediction, question, requested_person=str(parameters["person"])
-    )
-    timings["answer_generation"] = _elapsed_ms(started)
     return {
-        "answer": answer,
+        "answer": _format_effort_prediction(
+            prediction, question, requested_person=str(parameters["person"])
+        ),
         "cypher": "",
         "rows": [prediction],
         "schema": None,
         "error": None,
         "usage": add_usage(initial_usage or empty_usage(), usage),
-        "timings_ms": timings,
         "prediction": prediction,
         "case_id": None,
         "graph": {},
@@ -922,52 +896,34 @@ def _add_state_usage(state: AgentState, extra_usage: dict[str, int]) -> dict[str
 
 
 def _prepare(state: AgentState) -> AgentState:
-    started = time.perf_counter()
     schema = state.get("schema") or get_schema()
     return {
         "schema": schema,
         "domain_context": _build_domain_context(state["question"]),
         "usage": state.get("usage", empty_usage()),
-        "timings_ms": _add_timing(state, "prepare", started),
         "repair_attempts": 0,
         "error": None,
     }
 
 
 def _generate(state: AgentState) -> AgentState:
-    started = time.perf_counter()
     cypher, usage = generate_cypher(
         state["question"],
         state["schema"],
         state["domain_context"],
         state.get("history"),
     )
-    return {
-        "cypher": cypher,
-        "usage": _add_state_usage(state, usage),
-        "timings_ms": _add_timing(state, "cypher_generation", started),
-        "error": None,
-    }
+    return {"cypher": cypher, "usage": _add_state_usage(state, usage), "error": None}
 
 
 def _execute(state: AgentState) -> AgentState:
-    started = time.perf_counter()
     try:
-        return {
-            "rows": run_cypher(state["cypher"]),
-            "timings_ms": _add_timing(state, "neo4j", started),
-            "error": None,
-        }
+        return {"rows": run_cypher(state["cypher"]), "error": None}
     except Exception as exc:
-        return {
-            "rows": [],
-            "timings_ms": _add_timing(state, "neo4j", started),
-            "error": str(exc),
-        }
+        return {"rows": [], "error": str(exc)}
 
 
 def _repair(state: AgentState) -> AgentState:
-    started = time.perf_counter()
     failure = state["error"] or "The query returned zero rows."
     cypher, usage = repair_cypher(
         state["question"], state["schema"], state["cypher"], failure
@@ -975,7 +931,6 @@ def _repair(state: AgentState) -> AgentState:
     return {
         "cypher": cypher,
         "usage": _add_state_usage(state, usage),
-        "timings_ms": _add_timing(state, "cypher_repair", started),
         "repair_attempts": state.get("repair_attempts", 0) + 1,
         "error": None,
     }
@@ -992,7 +947,6 @@ def _answer(state: AgentState) -> AgentState:
     if not rows:
         return {"answer": _empty_answer(state["question"])}
 
-    started = time.perf_counter()
     if _wants_delivery_breakdown(state["question"]):
         visualization, presentation_usage, presentation_warning = (
             _table_visualization(rows),
@@ -1005,10 +959,8 @@ def _answer(state: AgentState) -> AgentState:
             rows,
             chat=lambda system, user: _chat(system, user, temperature=0),
         )
-    timings = _add_timing(state, "presentation", started)
     updates: AgentState = {
         "usage": _add_state_usage(state, presentation_usage),
-        "timings_ms": timings,
         "visualization": visualization,
         "presentation_warning": presentation_warning,
     }
@@ -1018,15 +970,11 @@ def _answer(state: AgentState) -> AgentState:
         answer = ""
         answer_usage = empty_usage()
     else:
-        started = time.perf_counter()
         answer, answer_usage = answer_from_rows(
             state["question"],
             state["cypher"],
             rows,
             structured_presentation=visualization is not None,
-        )
-        updates["timings_ms"] = _add_timing(
-            {"timings_ms": timings}, "answer_generation", started
         )
     updates["answer"] = answer
     updates["usage"] = add_usage(updates["usage"], answer_usage)
@@ -1168,16 +1116,11 @@ def ask(
 ) -> dict[str, Any]:
     """Route predictions directly and execute standard queries through LangGraph."""
     load_env()
-    started = time.perf_counter()
     is_prediction, intent_usage = classify_effort_prediction_intent(question, history)
-    timings = {"intent": _elapsed_ms(started)}
     if is_prediction:
         try:
             result = answer_effort_prediction(
-                question,
-                history,
-                initial_usage=intent_usage,
-                initial_timings=timings,
+                question, history, initial_usage=intent_usage
             )
             result["schema"] = schema
             return result
@@ -1191,7 +1134,6 @@ def ask(
                 "schema": schema,
                 "error": error,
                 "usage": intent_usage,
-                "timings_ms": timings,
                 "case_id": None,
                 "graph": {},
             }
@@ -1202,7 +1144,6 @@ def ask(
             "history": history or [],
             "schema": schema or {},
             "usage": intent_usage,
-            "timings_ms": timings,
         }
     )
     rows = result.get("rows", [])
@@ -1217,7 +1158,6 @@ def ask(
         "schema": result.get("schema", schema),
         "error": error,
         "usage": result.get("usage", intent_usage),
-        "timings_ms": result.get("timings_ms", timings),
         "visualization": visualization,
         "table": visualization.get("table") if visualization else None,
         "presentation_warning": result.get("presentation_warning"),

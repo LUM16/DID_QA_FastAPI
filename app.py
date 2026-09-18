@@ -131,12 +131,6 @@ def insight_payload(result: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
     if error and not answer:
         answer = str(error)
     usage = result.get("usage") or {}
-    timings_ms = {
-        str(stage): max(0, int(duration))
-        for stage, duration in (result.get("timings_ms") or {}).items()
-        if isinstance(duration, (int, float)) and not isinstance(duration, bool)
-    }
-    timings_ms["total"] = elapsed_ms
     return {
         "answer": answer,
         "cypher": cypher,
@@ -152,7 +146,6 @@ def insight_payload(result: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
         "fallback_used": False,
         "attempts": attempts,
         "elapsed_ms": elapsed_ms,
-        "timings_ms": timings_ms,
         "error": error,
         "usage": jsonable(usage),
         "prompt_tokens": int(usage.get("prompt_tokens") or 0),
