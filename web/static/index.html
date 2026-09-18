@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DID Insight · Neo4j Natural-Language Q&amp;A</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2c; --panel2:#1e2738; --line:#2a3550;
+    --text:#e6ebf4; --muted:#93a0b8; --accent:#4f8cff; --accent2:#37d0a0;
+    --high:#37d0a0; --med:#f5b945; --low:#ff6b6b; --chip:#243049;
+    --code-bg:#0b101b; --canvas-bg:#0b101b; --org-bg:#0b101b;
+    --th-hover-bg:#2a3a63; --th-hover-fg:#ffffff; --hitem-line:#1b2333;
+    --tip-bg:#0b1020; --tip-border:#3a4870; --tip-text:#e8eefc;
+    --chart-val:#dfe8ff; --chart-cat:#aebadb;
+    --c-grid:#222c45; --c-axis:#8a97b2; --c-axisline:#3a4870; --c-edge:#3a476b;
+    --c-bar:#4f8cff; --c-line:#37d0a0; --c-gtext:#cdd7ea; --c-onbar:#0b101b;
+    --c-piestroke:#0b101b;
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f7; --panel:#ffffff; --panel2:#f2f5fb; --line:#d6ddea;
+    --text:#1b2435; --muted:#5c6a86; --accent:#2f6bf0; --accent2:#0ca678;
+    --high:#0ca678; --med:#d08a06; --low:#e04141; --chip:#e6ebf5;
+    --code-bg:#f2f5fa; --canvas-bg:#ffffff; --org-bg:#ffffff;
+    --th-hover-bg:#dbe7ff; --th-hover-fg:#1b2435; --hitem-line:#e4e9f2;
+    --tip-bg:#ffffff; --tip-border:#c3ccdd; --tip-text:#1b2435;
+    --chart-val:#1b2435; --chart-cat:#51607c;
+    --c-grid:#e7ebf3; --c-axis:#7c89a3; --c-axisline:#c7d0e0; --c-edge:#c2cbdd;
+    --c-bar:#2f6bf0; --c-line:#0ca678; --c-gtext:#46536d; --c-onbar:#ffffff;
+    --c-piestroke:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",system-ui,-apple-system,"Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--text);font-size:14px}
+  header{display:flex;align-items:center;gap:14px;padding:10px 18px;background:var(--panel);
+         border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .sub{color:var(--muted);font-size:12px}
+  .spacer{flex:1}
+  select,button,input{font:inherit;color:var(--text)}
+  select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+  button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 12px;
+         cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+  .ok{background:var(--high)} .bad{background:var(--low)}
+  main{max-width:1040px;margin:0 auto;padding:18px 18px 140px}
+  .msg{margin:14px 0;display:flex;gap:10px}
+  .msg.user{flex-direction:row-reverse}
+  .bubble{max-width:92%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:normal}
+  .user .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+  .ai .bubble{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:3px;width:100%}
+  .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-bottom:8px}
+  .badge{padding:1px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
+  .b-high{color:var(--high);border-color:var(--high)} .b-med{color:var(--med);border-color:var(--med)}
+  .b-low{color:var(--low);border-color:var(--low)}
+  pre{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;
+      font-family:Consolas,Menlo,monospace;font-size:12.5px}
+  code{font-family:Consolas,Menlo,monospace;background:var(--code-bg);padding:1px 5px;border-radius:4px;font-size:12.5px}
+  pre code{background:none;padding:0}
+  details{margin:8px 0;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+  summary{cursor:pointer;padding:7px 10px;color:var(--muted)}
+  details[open] summary{border-bottom:1px solid var(--line)}
+  details .inner{padding:8px 10px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin:6px 0;display:block;overflow:auto;max-height:420px}
+  th,td{border:1px solid var(--line);padding:5px 9px;text-align:left;white-space:nowrap}
+  th{background:var(--panel2);position:sticky;top:0}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+  th.sortable:hover{color:var(--th-hover-fg);background:var(--th-hover-bg)}
+  th .sarr{color:var(--accent);font-size:10px;margin-left:3px}
+  .tabs{display:flex;gap:6px;margin:8px 0}
+  .tab{padding:4px 12px;border-radius:8px;border:1px solid var(--line);cursor:pointer;color:var(--muted);background:var(--panel2)}
+  .tab.active{color:var(--text);border-color:var(--accent)}
+  .pane{display:none}.pane.active{display:block}
+  .fb{margin-top:8px;display:flex;gap:8px;align-items:center}
+  .fb button{padding:3px 10px;font-size:12px}
+  canvas{background:var(--canvas-bg);border:1px solid var(--line);border-radius:8px;max-width:100%}
+  .composer{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(transparent,var(--bg) 30%);
+            padding:16px 0 18px}
+  .composer .box{max-width:1040px;margin:0 auto;padding:0 18px;display:flex;gap:10px}
+  .composer input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+                  padding:12px 14px}
+  .composer input:focus{outline:none;border-color:var(--accent)}
+  .toast{position:fixed;right:18px;bottom:84px;background:var(--panel2);border:1px solid var(--accent);
+         border-radius:8px;padding:10px 14px;max-width:360px;display:none;z-index:9}
+  h1,h2,h3,h4{margin:.6em 0 .35em}
+  ul,ol{margin:.3em 0 .3em 20px;padding:0}
+  .muted{color:var(--muted)}
+
+  /* ---- left query-history sidebar ---- */
+  #sidebar{position:fixed;top:0;left:0;bottom:0;width:250px;background:var(--panel);
+           border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:8;
+           transition:margin-left .18s ease}
+  #sidebar.collapsed{margin-left:-252px}
+  #sidebar .sh{display:flex;align-items:center;gap:8px;padding:12px 12px;font-weight:600;
+               font-size:13px;border-bottom:1px solid var(--line)}
+  #sidebar .sh .spacer{flex:1}
+  #sidebar .sh button{padding:2px 8px;font-size:11px}
+  #hlist{overflow:auto;flex:1;padding:6px}
+  .hitem{display:block;width:100%;text-align:left;background:transparent;border:0;
+         border-bottom:1px solid var(--hitem-line);color:var(--muted);padding:8px 10px;font-size:12.5px;
+         border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hitem:hover{color:var(--text);background:var(--panel2)}
+  .hempty{color:var(--muted);font-size:12px;padding:12px 10px}
+  body.sb header,body.sb main{margin-left:250px}
+  body.sb main{max-width:1120px}
+  body.sb .composer .box{margin-left:268px;margin-right:18px;max-width:none}
+  .iconbtn{padding:6px 9px;font-size:15px;line-height:1}
+  label.chk{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;cursor:pointer}
+
+  /* ---- organization chart by reporting level ---- */
+  .org{overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--org-bg);padding:10px;margin:6px 0}
+  .org-cols{display:flex;gap:14px;min-width:max-content;align-items:flex-start}
+  .org-col{display:flex;flex-direction:column;gap:8px;min-width:196px;max-width:220px}
+  .org-col h4{position:sticky;top:0;background:var(--org-bg);margin:0 0 2px;padding:4px 0 6px;
+              border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);z-index:1}
+  /* ---- charts: on-chart labels + hover tooltip ---- */
+  .pane canvas{width:100%;height:auto;display:block}
+  .chart-tip{display:none;position:absolute;z-index:30;pointer-events:none;max-width:300px;
+    background:var(--tip-bg);border:1px solid var(--tip-border);border-radius:6px;padding:5px 9px;font-size:12px;
+    color:var(--tip-text);box-shadow:0 6px 20px rgba(0,0,0,.28);white-space:normal}
+  .chart-val{font-weight:600;fill:var(--chart-val)}
+  .chart-cat{fill:var(--chart-cat)}
+  .ocard{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--panel2);font-size:12px}
+  .ocard .nm{font-weight:600;line-height:1.3}
+  .ocard .meta{color:var(--muted);font-size:11px;margin-top:3px}
+  .role{display:inline-block;font-size:10px;border:1px solid var(--accent2);color:var(--accent2);
+        border-radius:999px;padding:0 6px;margin:2px 4px 0 0}
+  .st{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  .st.Active{background:var(--high)} .st.Inactive{background:var(--low)} .st.Other{background:var(--muted)}
+</style>
+<script>
+  (function(){try{var t=localStorage.getItem('did2_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();
+</script>
+</head>
+<body>
+<aside id="sidebar">
+  <div class="sh">
+    <span>🗂 Query History</span>
+    <span class="spacer"></span>
+    <button id="btn-clear-hist" title="Clear history">Clear</button>
+  </div>
+  <div id="hlist"><div class="hempty">No queries yet.</div></div>
+</aside>
+<header>
+  <button id="btn-toggle-sb" class="iconbtn" title="Show/hide history sidebar">☰</button>
+  <div>
+    <h1>DID Insight</h1>
+    <div class="sub">Neo4j natural-language Q&amp;A agent</div>
+  </div>
+  <div class="spacer"></div>
+  <span id="health" class="muted"><span class="dot bad"></span>Checking…</span>
+  <label class="chk" title="Auto-switch to the graph view when relationship or org data is returned">
+    <input type="checkbox" id="autograph" checked />Auto graph
+  </label>
+  <button id="btn-theme" class="iconbtn" title="Switch between dark and light theme">☀️</button>
+  <label class="muted">LLM
+    <select id="provider">
+      <option value="">Default (auto fallback)</option>
+      <option value="ollama">ollama (local)</option>
+      <option value="ark">ark (Volcengine)</option>
+      <option value="vox" selected>vox (Voxpy/OAuth)</option>
+      <option value="openai">openai (compat endpoint)</option>
+    </select>
+  </label>
+  <button id="btn-stats" title="Learning statistics">Stats</button>
+  <button id="btn-improve" title="Distill failures into rules">Self-improve</button>
+  <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
+</header>
+
+<main id="chat">
+  <div class="msg ai"><div class="bubble">
+    Hi, I'm DID Insight. Ask a question in English or Chinese, for example:
+    <ul>
+      <li>How many deliveries to be completed next month?</li>
+      <li>List John's current deliveries with their task counts</li>
+      <li>Show Kiki's org chart</li>
+    </ul>
+    I translate your question into read-only Cypher, self-correct it, and learn from every feedback click.
+  </div></div>
+</main>
+
+<div class="composer">
+  <div class="box">
+    <input id="q" placeholder="Type your question, press Enter to send…" autocomplete="off"/>
+    <button class="primary" id="send">Send</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const chat = $('#chat');
+const conv = [];                       // conversation sent to the backend
+let lastCaseId = null;
+
+// ---- query history sidebar (persisted) ----
+const LS_HIST='did2_history_v1', LS_AUTOG='did2_autograph', LS_SB='did2_sidebar';
+let queries = JSON.parse(localStorage.getItem(LS_HIST)||'[]');
+function saveHistory(){ try{localStorage.setItem(LS_HIST,JSON.stringify(queries.slice(0,60)));}catch(e){} }
+function recordHistory(q){
+  queries = queries.filter(x=>x!==q); queries.unshift(q); queries=queries.slice(0,60);
+  saveHistory(); renderHistory();
+}
+function renderHistory(){
+  const host=$('#hlist');
+  if(!queries.length){ host.innerHTML='<div class="hempty">No queries yet.</div>'; return; }
+  host.innerHTML='';
+  queries.forEach(q=>{
+    const b=document.createElement('button'); b.className='hitem'; b.textContent=q; b.title=q;
+    b.onclick=()=>{ ask(q); };
+    host.appendChild(b);
+  });
+}
+function setSidebar(open){
+  document.body.classList.toggle('sb',open);
+  $('#sidebar').classList.toggle('collapsed',!open);
+  try{localStorage.setItem(LS_SB,open?'1':'0');}catch(e){}
+}
+$('#btn-toggle-sb').onclick=()=>setSidebar(!document.body.classList.contains('sb'));
+$('#btn-clear-hist').onclick=()=>{queries=[];saveHistory();renderHistory();toast('History cleared');};
+(function initSidebar(){
+  const sb=localStorage.getItem(LS_SB); setSidebar(sb==='0'?false:true); renderHistory();
+  const ag=localStorage.getItem(LS_AUTOG); $('#autograph').checked = ag==='0'?false:true;
+  $('#autograph').onchange=e=>localStorage.setItem(LS_AUTOG,e.target.checked?'1':'0');
+})();
+
+// ---- theme (dark / light) ----
+const LS_THEME='did2_theme';
+function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function chartPal(){return {grid:cssVar('--c-grid'),axis:cssVar('--c-axis'),axisLine:cssVar('--c-axisline'),
+  edge:cssVar('--c-edge'),bar:cssVar('--c-bar'),line:cssVar('--c-line'),gtext:cssVar('--c-gtext'),
+  onbar:cssVar('--c-onbar'),piestroke:cssVar('--c-piestroke'),val:cssVar('--chart-val'),cat:cssVar('--chart-cat')};}
+function currentTheme(){return document.documentElement.getAttribute('data-theme')==='light'?'light':'dark';}
+function redrawVisibleCanvases(){
+  document.querySelectorAll('.result-tabs').forEach(box=>{
+    const tab=box.querySelector('.tab.active'); if(!tab)return;
+    const k=tab.dataset.k;
+    if(['bar','line','pie','graph'].includes(k)){
+      const pane=box.querySelector(`[data-pane="${k}"]`);
+      if(pane){pane.innerHTML='';tab.click();}
+    }
+  });
+}
+function applyTheme(t){
+  if(t==='light')document.documentElement.setAttribute('data-theme','light');
+  else document.documentElement.removeAttribute('data-theme');
+  try{localStorage.setItem(LS_THEME,t);}catch(e){}
+  const b=$('#btn-theme'); if(b)b.textContent=t==='light'?'🌙':'☀️';
+  redrawVisibleCanvases();
+}
+$('#btn-theme').onclick=()=>applyTheme(currentTheme()==='light'?'dark':'light');
+applyTheme(currentTheme());
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+function renderMarkdown(md){
+  if(!md) return '';
+  let s = esc(md);
+  // fenced code
+  s = s.replace(/```(?:\w+)?\n?([\s\S]*?)```/g, (m,c)=>`<pre><code>${c.replace(/\n$/,'')}</code></pre>`);
+  // pipe tables
+  s = s.replace(/(?:^\|.*\|\s*\n\|[ :|-]+\|\s*\n(?:^\|.*\|\s*\n?)+)/gm, block=>{
+    const lines=block.trim().split('\n').filter(l=>l.trim());
+    if(lines.length<2) return block;
+    const parse=l=>l.replace(/^\||\|$/g,'').split('|').map(x=>x.trim());
+    const head=parse(lines[0]);
+    let html='<table><thead><tr>'+head.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>';
+    for(let i=2;i<lines.length;i++){html+='<tr>'+parse(lines[i]).map(c=>`<td>${inline(c)}</td>`).join('')+'</tr>';}
+    return html+'</tbody></table>';
+  });
+  // headings / bold / inline code / lists / paragraphs
+  const blocks = s.split(/\n{2,}/).map(para=>{
+    if(para.startsWith('<pre')||para.startsWith('<table')) return para;
+    const lines = para.split('\n');
+    if(lines.every(l=>/^\s*[-*]\s+/.test(l)))
+      return '<ul>'+lines.map(l=>`<li>${inline(l.replace(/^\s*[-*]\s+/,''))}</li>`).join('')+'</ul>';
+    if(lines.every(l=>/^\s*\d+\.\s+/.test(l)))
+      return '<ol>'+lines.map(l=>`<li>${inline(l.replace(/^\s*\d+\.\s+/,''))}</li>`).join('')+'</ol>';
+    return lines.map(l=>{
+      if(/^####\s+/.test(l)) return `<h4>${inline(l.replace(/^####\s+/,''))}</h4>`;
+      if(/^###\s+/.test(l)) return `<h3>${inline(l.replace(/^###\s+/,''))}</h3>`;
+      if(/^##\s+/.test(l)) return `<h2>${inline(l.replace(/^##\s+/,''))}</h2>`;
+      if(/^#\s+/.test(l)) return `<h2>${inline(l.replace(/^#\s+/,''))}</h2>`;
+      return inline(l);
+    }).join('<br>');
+  });
+  return blocks.join('\n');
+}
+function inline(s){
+  return s.replace(/`([^`]+)`/g,'<code>$1</code>')
+          .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+          .replace(/(^|[\s(])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+}
+
+function toast(msg){const t=$('#toast');t.textContent=msg;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',4000);}
+
+function addUser(q){
+  conv.push({role:'user',content:q});
+  const d=document.createElement('div');d.className='msg user';
+  d.innerHTML=`<div class="bubble">${esc(q)}</div>`;chat.appendChild(d);scroll();
+}
+
+function confBadge(c){const map={high:'b-high',medium:'b-med',low:'b-low'};const t={high:'High confidence',medium:'Medium confidence',low:'Low confidence'};
+  return `<span class="badge ${map[c]||'b-med'}">${t[c]||c}</span>`;}
+
+function addResult(r){
+  conv.push({role:'assistant',content:r.answer||''});
+  lastCaseId = r.case_id;
+  const d=document.createElement('div');d.className='msg ai';
+  const attempts = (r.attempts||[]).map((a,i)=>{
+    const st = a.error?`❌ ${esc(a.error)}`:(a.row_count>0?`✅ ${a.row_count} rows`:'0 rows');
+    return `<div><strong>Attempt ${i+1}</strong> — ${st}${a.cypher?`<pre><code>${esc(a.cypher)}</code></pre>`:''}${a.feedback?`<div class="muted">↳ ${esc(a.feedback)}</div>`:''}</div>`;
+  }).join('');
+  d.innerHTML = `<div class="bubble">
+    <div class="meta">
+      ${confBadge(r.confidence)}
+      <span>${esc(r.provider||'')}${r.model?' / '+esc(r.model):''}${r.fallback_used?' (fallback)':''}</span>
+      <span>· attempts ${(r.attempts||[]).length} · ${r.row_count} rows · ${r.elapsed_ms}ms · ${Number(r.total_tokens||((r.usage||{}).total_tokens)||0).toLocaleString()} tokens (${Number(r.prompt_tokens||((r.usage||{}).prompt_tokens)||0).toLocaleString()} in / ${Number(r.completion_tokens||((r.usage||{}).completion_tokens)||0).toLocaleString()} out)</span>
+    </div>
+    ${renderMarkdown(r.answer)}
+    ${r.cypher?`<details><summary>🔍 Final Cypher</summary><div class="inner"><pre><code>${esc(r.cypher)}</code></pre></div></details>`:''}
+    ${attempts?`<details><summary>🧪 Execution &amp; self-correction</summary><div class="inner">${attempts}</div></details>`:''}
+    <div class="result-tabs" data-id="${r.case_id||''}"></div>
+    <div class="fb">
+      <span class="muted">Was this helpful?</span>
+      <button class="up">👍 Yes</button><button class="down">👎 No (used for learning)</button>
+    </div>
+  </div>`;
+  chat.appendChild(d);
+  renderTabs(d.querySelector('.result-tabs'), r);
+  d.querySelector('.up').onclick=()=>sendFeedback(r.case_id,1,d);
+  d.querySelector('.down').onclick=()=>sendFeedback(r.case_id,-1,d);
+  scroll();
+}
+
+// Flatten serialized Neo4j nodes / relationship lists into readable cell text.
+function cellText(v){
+  if(v===null||v===undefined) return '';
+  if(Array.isArray(v)){
+    if(v.length && v.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&x._relationship))
+      return `${v.length} × ${v[0]._relationship}`;
+    if(v.length && v.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&('Name' in x||'title' in x)))
+      return v.map(x=>x.Name||x.title).join(', ');
+    return v.map(cellText).join('; ');
+  }
+  if(typeof v==='object'){
+    if('Name' in v && v.Name) return v.Name;
+    if('title' in v && v.title) return v.title;
+    if('DID' in v && v.DID) return v.DID;
+    return JSON.stringify(v);
+  }
+  return v;
+}
+
+// Comparable raw value for table sorting (display still uses cellText).
+function sortValue(v){
+  if(v===null||v===undefined) return null;
+  if(Array.isArray(v)){
+    if(v.length && v.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&x._relationship)) return v.length;
+    if(v.length && v.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&('Name' in x||'title' in x)))
+      return v.map(x=>x.Name||x.title).join(', ');
+    return v.map(cellText).join('; ');
+  }
+  if(typeof v==='object'){ return v.Name||v.title||v.DID||JSON.stringify(v); }
+  const s=String(v).trim();
+  if(/^-?[\d.,%\s]+$/.test(s)){ const n=parseFloat(s.replace(/[,%\s]/g,'')); if(Number.isFinite(n)) return n; }
+  return s;
+}
+
+function isOrgGraph(g){
+  if(!g||!Array.isArray(g.edges)||!g.edges.length) return false;
+  const rep=g.edges.filter(e=>e.type==='REPORTS_TO').length/g.edges.length;
+  const person=g.nodes.filter(n=>n.label==='Person'||(n.labels||[]).includes('Person')).length/Math.max(1,g.nodes.length);
+  return rep>=0.8 && person>=0.8;
+}
+
+// Build a synthetic org graph from flat rows shaped like
+// person, reporting_level, reports_to (array/string of manager names), status.
+// Lets one scalar query drive BOTH the clean table and the org-chart view.
+function orgFromRows(rows,cols){
+  const find=names=>cols.find(c=>names.some(n=>String(c).toLowerCase()===n));
+  let pc=find(['person','name','employee','member','direct_report'])||cols.find(c=>/name|person|employee|member/i.test(c));
+  const rc=find(['reports_to','reportsto','manager','managers'])||cols.find(c=>/report|manager/i.test(c));
+  const sc=find(['status'])||cols.find(c=>/^status$/i.test(c));
+  if(!pc||!rc) return null;
+  const nodeMap=new Map();
+  const edges=[];
+  const ensure=(nm,status)=>{nm=String(nm??'').trim(); if(!nm)return null;
+    if(!nodeMap.has(nm)) nodeMap.set(nm,{id:nm,label:'Person',labels:['Person'],properties:{Name:nm,Status:status||''}});
+    else if(status&&!nodeMap.get(nm).properties.Status) nodeMap.get(nm).properties.Status=status;
+    return nm;};
+  const asList=v=>{
+    if(v==null)return [];
+    if(Array.isArray(v))return v;
+    if(typeof v==='object')return [v.Name||v.title||''];
+    const s=String(v).trim();
+    try{const p=JSON.parse(s); return Array.isArray(p)?p:[p];}catch(e){}
+    return s.split(/\s*[;,]\s*/).filter(Boolean);
+  };
+  rows.forEach(r=>{
+    const emp=ensure(cellText(r[pc]), sc?r[sc]:''); if(!emp)return;
+    asList(r[rc]).forEach(m=>{
+      const mn=typeof m==='object'?ensure(cellText(m),''):ensure(m,'');
+      if(mn&&mn!==emp) edges.push({source:emp,target:mn,type:'REPORTS_TO'});
+    });
+  });
+  const nodes=[...nodeMap.values()];
+  if(nodes.length<2||!edges.length) return null;
+  return {nodes,edges,node_count:nodes.length,edge_count:edges.length,synthetic:true};
+}
+
+// Hierarchical org chart grouped by reporting level (level 0 = root/self).
+function buildOrg(g){
+  const wrap=document.createElement('div');
+  const byId=new Map(g.nodes.map(n=>[n.id,n]));
+  const children=new Map(), hasBoss=new Set(), mgrOf=new Map();
+  (g.edges||[]).forEach(e=>{
+    const m=e.target, c=e.source;            // REPORTS_TO: employee(source) -> manager(target)
+    if(!byId.has(m)||!byId.has(c)) return;
+    if(!children.has(m)) children.set(m,[]);
+    children.get(m).push(c); hasBoss.add(c); mgrOf.set(c,m);
+  });
+  let roots=g.nodes.filter(n=>!hasBoss.has(n.id));
+  let root=roots[0];
+  if(roots.length>1) root=roots.reduce((a,b)=>((children.get(a.id)?.length||0)>=(children.get(b.id)?.length||0)?a:b));
+  const levels=[]; const seen=new Set();
+  let frontier=root?[root.id]:[];
+  while(frontier.length){
+    levels.push(frontier);
+    const nxt=[];
+    frontier.forEach(id=>{ seen.add(id); (children.get(id)||[]).forEach(c=>{ if(!seen.has(c)) nxt.push(c); }); });
+    frontier=[...new Set(nxt)].sort((a,b)=>String(byId.get(a).properties?.Name||'').localeCompare(String(byId.get(b).properties?.Name||'')));
+  }
+  const rest=g.nodes.map(n=>n.id).filter(id=>!seen.has(id));
+  if(rest.length) levels.push(rest);
+
+  const nameOf=id=>{const n=byId.get(id);return n.properties?.Name||n.title||n.label;};
+  function card(id){
+    const n=byId.get(id), p=n.properties||{};
+    const roles=[];
+    if(p.Group_Lead==='Y')roles.push('Group Lead');
+    if(p.TA_Lead==='Y')roles.push('TA Lead');
+    if(p.Manager==='Y')roles.push('Manager');
+    const st=p.Status==='Active'?'Active':(p.Status==='Inactive'?'Inactive':'Other');
+    const mgr=mgrOf.get(id);
+    return `<div class="ocard">
+      <div class="nm"><span class="st ${st}"></span>${esc(nameOf(id))}</div>
+      <div class="meta">${roles.map(r=>`<span class="role">${esc(r)}</span>`).join('')}${p.Site?esc(p.Site):''}${p.Status==='Inactive'?' · Inactive':''}</div>
+      ${mgr?`<div class="meta">Reports to ${esc(nameOf(mgr))}</div>`:''}
+    </div>`;
+  }
+  let html=`<div class="org"><div class="muted" style="font-size:12px;margin-bottom:8px">
+    By reporting level (Level 0 = self/top): ${g.node_count} people across ${levels.length} level(s)${g.truncated_graph?' (large graph truncated)':''}</div>
+    <div class="org-cols">`;
+  levels.forEach((ids,i)=>{
+    html+=`<div class="org-col"><h4>Level ${i} · ${ids.length}</h4>${ids.map(card).join('')}</div>`;
+  });
+  html+='</div></div>';
+  wrap.innerHTML=html; return wrap;
+}
+
+function renderTabs(host,r){
+  if(!r.rows || !r.rows.length){ host.innerHTML=''; return; }
+  const cols=(r.columns&&r.columns.length)?r.columns:Object.keys(r.rows[0]||{});
+  let g=r.graph||{}; let org=isOrgGraph(g);
+  if(!org){const synth=orgFromRows(r.rows,cols); if(synth){g=synth;org=true;}}
+  const chartKinds=['bar','line','pie'];
+  const hasChart=r.viz&&chartKinds.includes(r.viz.kind);
+  const autoGraph=localStorage.getItem(LS_AUTOG)!=='0';
+
+  const tabs=[];
+  if(org) tabs.push(['org','🏢 Org Chart']);
+  if(g.edge_count>0&&!g.synthetic) tabs.push(['graph',`🕸 Graph (${g.node_count}/${g.edge_count})`]);
+  tabs.push(['table','Table']);
+  if(hasChart) tabs.push([r.viz.kind,'Chart']);
+
+  let def='table';
+  if(autoGraph){ if(org)def='org'; else if(g.edge_count>0)def='graph'; else if(hasChart)def=r.viz.kind; }
+
+  host.innerHTML='<div class="tabs">'+tabs.map(k=>`<div class="tab ${k[0]===def?'active':''}" data-k="${k[0]}">${k[1]}</div>`).join('')+'</div>'
+    +tabs.map(k=>`<div class="pane ${k[0]===def?'active':''}" data-pane="${k[0]}"></div>`).join('')
+    +`<div style="margin-top:6px"><button class="dl" data-f="csv">Download CSV</button> <button class="dl" data-f="json">Download JSON</button></div>`;
+
+  const fill=(k,pane)=>{
+    if(pane.childNodes.length) return;
+    if(k==='table') pane.appendChild(buildTable(r.rows,cols));
+    else if(k==='org') pane.appendChild(buildOrg(g));
+    else if(k==='graph') drawGraph(pane,g);
+    else if(chartKinds.includes(k)) drawChart(pane,r,k);
+  };
+  fill(def,host.querySelector(`[data-pane="${def}"]`));
+  host.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+    host.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    host.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    const k=t.dataset.k, pane=host.querySelector(`[data-pane="${k}"]`);
+    pane.classList.add('active'); fill(k,pane);
+  });
+  host.querySelectorAll('.dl').forEach(b=>b.onclick=()=>download(r.cypher,b.dataset.f));
+}
+
+function buildTable(rows,columns){
+  const wrap=document.createElement('div');
+  // A column is numeric when most of its non-empty values are numbers.
+  const numCol={};
+  columns.forEach(c=>{let nn=0,tt=0;
+    rows.forEach(r=>{const s=sortValue(r[c]); if(s===null||s==='')return; tt++; if(typeof s==='number')nn++;});
+    numCol[c]=tt>0&&nn/tt>=0.8;});
+  let sortCol=null,sortDir=1; // dir: 1 asc, -1 desc
+  function ordered(){
+    if(sortCol===null) return rows;
+    const c=sortCol,dir=sortDir,num=numCol[c];
+    return rows.slice().sort((a,b)=>{
+      let va=sortValue(a[c]),vb=sortValue(b[c]);
+      const ea=va===null||va==='',eb=vb===null||vb==='';
+      if(ea&&eb)return 0; if(ea)return 1; if(eb)return -1; // empties always last
+      if(num||(typeof va==='number'&&typeof vb==='number'))
+        return (va<vb?-1:va>vb?1:0)*dir;
+      return String(va).localeCompare(String(vb),undefined,{numeric:true,sensitivity:'base'})*dir;
+    });
+  }
+  function render(){
+    const show=ordered().slice(0,100);
+    let html='<table class="sortable-table"><thead><tr>'+columns.map((c,i)=>{
+      const arrow=c===sortCol?(sortDir===1?' ▲':' ▼'):'';
+      return `<th class="sortable" data-i="${i}" title="Click to sort">${esc(c)}<span class="sarr">${arrow}</span></th>`;
+    }).join('')+'</tr></thead><tbody>';
+    for(const row of show){html+='<tr>'+columns.map(c=>`<td>${esc(cellText(row[c]))}</td>`).join('')+'</tr>';}
+    html+='</tbody></table>';
+    if(rows.length>100)
+      html+=`<div class="muted">Sorted over all ${rows.length} rows; showing the first 100. Download CSV/JSON for the full result set.</div>`;
+    wrap.innerHTML=html;
+    wrap.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{
+      const c=columns[Number(th.dataset.i)];
+      if(sortCol===c) sortDir=-sortDir; else { sortCol=c; sortDir=numCol[c]?-1:1; }
+      render();
+    });
+  }
+  render();
+  return wrap;
+}
+
+function numeric(v){const n=parseFloat(String(v).replace(/[,%]/g,''));return Number.isFinite(n)?n:null;}
+function fmtChartNum(v){
+  const n=Number(v); if(!isFinite(n)) return String(v??'');
+  const a=Math.abs(n);
+  if(a>=1000000) return (n/1000000).toFixed(a>=10000000?0:1)+'M';
+  if(a>=1000) return n.toLocaleString(undefined,{maximumFractionDigits:1});
+  return Number.isInteger(n)?String(n):n.toFixed(1);
+}
+function niceMax(mx){ if(!(mx>0)) return 1;
+  const pow=Math.pow(10,Math.floor(Math.log10(mx))), k=mx/pow;
+  const f=(k<=1)?1:(k<=2)?2:(k<=2.5)?2.5:(k<=5)?5:10; return f*pow; }
+function fitText(ctx,t,maxw){ t=String(t??'');
+  if(ctx.measureText(t).width<=maxw) return t;
+  while(t.length>1 && ctx.measureText(t+'…').width>maxw) t=t.slice(0,-1);
+  return t+'…'; }
+function initCanvas(cv,W,H,dpr){ cv.width=W*dpr; cv.height=H*dpr; cv.style.width='100%';
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H); return ctx; }
+function bindChartHover(pane,cv,W,H,hits){
+  pane.style.position='relative';
+  let tip=pane.querySelector('.chart-tip');
+  if(!tip){tip=document.createElement('div');tip.className='chart-tip';pane.appendChild(tip);}
+  cv.onmousemove=e=>{ const rect=cv.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)/rect.width*W, my=(e.clientY-rect.top)/rect.height*H;
+    const h=hits.find(z=>z.test?z.test(mx,my):(mx>=z.x&&mx<=z.x+z.w&&my>=z.y&&my<=z.y+z.h));
+    if(h){ tip.style.display='block';
+      tip.innerHTML=`${esc(h.label)}<br><b>${fmtChartNum(h.value)}</b>`;
+      const pr=pane.getBoundingClientRect();
+      let x=e.clientX-pr.left+14, y=e.clientY-pr.top+14;
+      if(x+tip.offsetWidth>pr.width-4) x=e.clientX-pr.left-tip.offsetWidth-10;
+      tip.style.left=Math.max(0,x)+'px'; tip.style.top=Math.max(0,y)+'px'; cv.style.cursor='default';
+    } else tip.style.display='none';
+  };
+  cv.onmouseleave=()=>{tip.style.display='none';};
+}
+const PIE_COLORS=['#4f8cff','#37d0a0','#f5b945','#ff6b6b','#9b7bff','#3fd0e0','#e08fdc','#8bd36b','#f08d5a','#6ea8ff'];
+
+function drawChart(pane,r,kind){
+  pane.innerHTML='';
+  const chart=(r.viz&&r.viz.chart)||r.chart_suggestion;
+  if(!chart){pane.textContent='No chart specification';return;}
+  const rows=(r.rows||[]).slice(0,20);
+  if(!rows.length){pane.textContent='No data to chart.';return;}
+  let labels,vals;
+  if(kind==='pie'){labels=rows.map(x=>x[chart.names]);vals=rows.map(x=>numeric(x[chart.values]));}
+  else{labels=rows.map(x=>x[chart.x]);vals=rows.map(x=>numeric(x[chart.y]));}
+  vals=vals.map(v=>v??0);
+  const cv=document.createElement('canvas'); pane.appendChild(cv);
+  const dpr=window.devicePixelRatio||1;
+  if(kind==='pie') pieChart(pane,cv,labels,vals,dpr);
+  else if(kind==='line') vChart(pane,cv,labels,vals,dpr,true);
+  else if(labels.some(l=>String(l??'').length>12)) hBar(pane,cv,labels,vals,dpr);
+  else vChart(pane,cv,labels,vals,dpr,false);
+}
+
+// Vertical bars / line: values above marks, rotated category names on x axis.
+function vChart(pane,cv,labels,vals,dpr,isLine){
+  const W=900,H=380,padL=56,padR=24,top=24,padB=74;
+  const ctx=initCanvas(cv,W,H,dpr);
+  const P=chartPal();
+  const x0=padL,x1=W-padR,y0=top,y1=H-padB,pw=x1-x0,ph=y1-y0;
+  const max=niceMax(Math.max(...vals,0)), ticks=5;
+  ctx.font='10px sans-serif';
+  for(let t=0;t<=ticks;t++){const val=max*t/ticks,y=y1-ph*t/ticks;
+    ctx.strokeStyle=P.grid;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+    ctx.fillStyle=P.axis;ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(fmtChartNum(val),x0-7,y);}
+  ctx.strokeStyle=P.axisLine;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x0,y1);ctx.lineTo(x1,y1);ctx.stroke();
+  const n=vals.length,slot=pw/n,barW=Math.min(46,slot*0.62),hits=[];
+  const cx=i=>x0+slot*(i+0.5), yy=v=>y1-ph*(v/max);
+  if(isLine){ctx.strokeStyle=P.line;ctx.lineWidth=2;ctx.beginPath();
+    vals.forEach((v,i)=>{const X=cx(i),Y=yy(v); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.stroke();ctx.lineWidth=1;}
+  vals.forEach((v,i)=>{const X=cx(i),Y=yy(v);
+    if(isLine){ctx.fillStyle=P.line;ctx.beginPath();ctx.arc(X,Y,3.2,0,7);ctx.fill();
+      if(n<=12){ctx.fillStyle=P.val;ctx.font='11px sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillText(fmtChartNum(v),X,Y-7);}
+      hits.push({x:X-12,y:y0,w:24,h:y1-y0+16,label:labels[i],value:v});
+    }else{const w=barW;ctx.fillStyle=P.bar;ctx.fillRect(X-w/2,Y,w,y1-Y);
+      ctx.fillStyle=P.val;ctx.font='11px sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+      ctx.fillText(fmtChartNum(v),X,Y-4);
+      hits.push({x:X-w/2,y:y0,w:w,h:y1-y0,label:labels[i],value:v});}
+    ctx.save();ctx.translate(X,y1+9);ctx.rotate(-0.55);
+    ctx.fillStyle=P.cat;ctx.font='10.5px sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.fillText(fitText(ctx,String(labels[i]??''),84),0,0);ctx.restore();
+  });
+  bindChartHover(pane,cv,W,H,hits);
+}
+
+// Horizontal bars: full person/name labels on the left, value at each bar end.
+function hBar(pane,cv,labels,vals,dpr){
+  const W=900,n=vals.length,rowH=n<=12?30:26,top=14,bottom=30;
+  const H=Math.max(380,top+n*rowH+bottom);
+  const ctx=initCanvas(cv,W,H,dpr);
+  const P=chartPal();
+  ctx.font='11.5px sans-serif';
+  const shortName=l=>{const t=String(l??'');return t.length>26?t.slice(0,25)+'…':t;};
+  let nameW=0;labels.forEach(l=>{nameW=Math.max(nameW,ctx.measureText(shortName(l)).width);});
+  nameW=Math.min(210,nameW);
+  const x0=nameW+14,x1=W-66,pw=x1-x0,max=niceMax(Math.max(...vals,0)),ticks=4,plotTop=top,plotH=n*rowH;
+  ctx.font='10px sans-serif';
+  for(let t=0;t<=ticks;t++){const val=max*t/ticks,x=x0+pw*t/ticks;
+    ctx.strokeStyle=P.grid;ctx.beginPath();ctx.moveTo(x,plotTop);ctx.lineTo(x,plotTop+plotH);ctx.stroke();
+    ctx.fillStyle=P.axis;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(fmtChartNum(val),x,plotTop+plotH+6);}
+  ctx.strokeStyle=P.axisLine;ctx.beginPath();ctx.moveTo(x0,plotTop);ctx.lineTo(x0,plotTop+plotH);ctx.stroke();
+  const hits=[];
+  vals.forEach((v,i)=>{const cy=plotTop+i*rowH+rowH/2,bh=Math.min(18,rowH*0.56),w=pw*(v/max);
+    ctx.fillStyle=P.cat;ctx.font='11.5px sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.fillText(fitText(ctx,String(labels[i]??''),nameW),x0-9,cy);
+    ctx.fillStyle=P.bar;ctx.fillRect(x0,cy-bh/2,Math.max(w,v?2:0),bh);
+    ctx.font='bold 11.5px sans-serif';
+    if(w>pw-54){ctx.fillStyle=P.onbar;ctx.textAlign='right';ctx.fillText(fmtChartNum(v),x0+w-7,cy);}
+    else{ctx.fillStyle=P.val;ctx.textAlign='left';ctx.fillText(fmtChartNum(v),x0+w+7,cy);}
+    hits.push({x:x0,y:cy-bh/2,w:pw,h:bh,label:labels[i],value:v});
+  });
+  bindChartHover(pane,cv,W,H,hits);
+}
+
+// Pie: percentage on large slices; legend shows name + value + percent.
+function pieChart(pane,cv,labels,vals,dpr){
+  const n=vals.length,W=900,H=Math.max(380,44+n*24);
+  const ctx=initCanvas(cv,W,H,dpr);
+  const P=chartPal();
+  const val0=i=>isFinite(vals[i])&&vals[i]>0?vals[i]:0;
+  const total=vals.reduce((a,b)=>a+(isFinite(b)&&b>0?b:0),0)||1;
+  const cx=W*0.27,cy=H/2,r=Math.min(150,H/2-28);
+  let a=-Math.PI/2; const hits=[];
+  vals.forEach((v,i)=>{const frac=val0(i)/total,ang=frac*Math.PI*2,a0=a,a1=a+ang;
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,a,a+ang);ctx.closePath();
+    ctx.fillStyle=PIE_COLORS[i%PIE_COLORS.length];ctx.fill();
+    ctx.strokeStyle=P.piestroke;ctx.lineWidth=1.5;ctx.stroke();
+    if(frac>=0.06){const mid=a+ang/2,px=cx+Math.cos(mid)*r*0.62,py=cy+Math.sin(mid)*r*0.62;
+      ctx.fillStyle='#fff';ctx.font='bold 11px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText((frac*100).toFixed(frac>=0.2?0:1)+'%',px,py);}
+    hits.push({label:labels[i],value:v,test:(mx,my)=>{const dx=mx-cx,dy=my-cy;if(Math.hypot(dx,dy)>r)return false;
+      let th=Math.atan2(dy,dx);while(th<a0)th+=2*Math.PI;return th>=a0&&th<=a1;}});
+    a+=ang;});
+  const lx=cx+r+44;ctx.font='12px sans-serif';ctx.textBaseline='middle';
+  vals.forEach((v,i)=>{const y=30+i*24;
+    ctx.fillStyle=PIE_COLORS[i%PIE_COLORS.length];ctx.fillRect(lx,y-7,12,12);
+    ctx.fillStyle=P.cat;ctx.textAlign='left';
+    const pct=val0(i)/total*100;
+    ctx.fillText(`${fitText(ctx,String(labels[i]??''),W-lx-24)} — ${fmtChartNum(v)} (${pct.toFixed(1)}%)`,lx+18,y);});
+  bindChartHover(pane,cv,W,H,hits);
+}
+
+function drawGraph(pane,g){
+  pane.innerHTML='';const cv=document.createElement('canvas');cv.width=940;cv.height=520;pane.appendChild(cv);
+  const nodes=(g.nodes||[]).slice(0,160).map((n,i)=>({x:470+Math.cos(i)*220+(Math.random()*40),y:260+Math.sin(i)*220+(Math.random()*40),vx:0,vy:0,d:n}));
+  const id=new Map(nodes.map(n=>[n.d.id,n]));
+  const edges=(g.edges||[]).filter(e=>id.has(e.source)&&id.has(e.target)).map(e=>({s:id.get(e.source),t:id.get(e.target),type:e.type}));
+  const ctx=cv.getContext('2d');
+  const P=chartPal();
+  for(let k=0;k<260;k++){
+    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+      const a=nodes[i],b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y;let d2=dx*dx+dy*dy||1;const f=9000/d2;
+      const d=Math.sqrt(d2);dx/=d;dy/=d;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f;}
+    edges.forEach(e=>{let dx=e.t.x-e.s.x,dy=e.t.y-e.s.y;const d=Math.hypot(dx,dy)||1;const f=(d-110)*0.01;
+      dx/=d;dy/=d;e.s.vx+=dx*f;e.s.vy+=dy*f;e.t.vx-=dx*f;e.t.vy-=dy*f;});
+    nodes.forEach(n=>{n.vx+=(470-n.x)*0.002;n.vy+=(260-n.y)*0.002;n.vx*=0.85;n.vy*=0.85;n.x+=n.vx;n.y+=n.vy;});
+  }
+  ctx.strokeStyle=P.edge;ctx.lineWidth=1;
+  edges.forEach(e=>{ctx.beginPath();ctx.moveTo(e.s.x,e.s.y);ctx.lineTo(e.t.x,e.t.y);ctx.stroke();});
+  nodes.forEach(n=>{ctx.fillStyle=P.bar;ctx.beginPath();ctx.arc(n.x,n.y,6,0,7);ctx.fill();
+    ctx.fillStyle=P.gtext;ctx.font='10px sans-serif';ctx.fillText(String(n.d.title||n.d.label).slice(0,22),n.x+8,n.y+3);});
+}
+
+function apiUrl(path){
+  const rel=String(path||'').replace(/^\//,'');
+  return new URL(rel, window.location.href).toString();
+}
+async function api(path,body){const opt=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
+  const res=await fetch(apiUrl(path),opt);if(!res.ok){let m=path;try{const err=await res.json();m=err.detail||err.message||res.statusText; if(Array.isArray(m)) m=m.map(x=>x.msg||JSON.stringify(x)).join('; ');}catch(e){m=res.statusText;}throw new Error(m);}
+  return path.includes('export')?res:res.json();}
+
+async function sendFeedback(id,vote,el){if(!id){toast('This answer has no recordable case');return;}
+  try{await api('/api/feedback',{case_id:id,vote});toast(vote>0?'Saved 👍 — this case is kept as a positive example':'Saved 👎 — it will be distilled into improved rules');
+    el.querySelector('.up').disabled=vote>0;el.querySelector('.down').disabled=vote<0;}catch(e){toast('Feedback failed: '+e.message);}}
+
+async function download(cypher,fmt){if(!cypher){toast('No query available to export');return;}
+  const res=await api('/api/export',{cypher,format:fmt});const blob=await res.blob();
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='did_result.'+fmt;a.click();}
+
+async function ask(preset){
+  const inp=$('#q');
+  const q=String(preset!==undefined?preset:inp.value).trim();
+  if(!q)return;
+  if(preset===undefined) inp.value='';
+  addUser(q); recordHistory(q);
+  const thinking=document.createElement('div');thinking.className='msg ai';
+  thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
+  const provider=$('#provider').value||null;
+  try{
+    const r=await api('/api/query',{question:q,history:conv.slice(-12),provider});
+    thinking.remove();addResult(r);
+    if(r.improve_report&&r.improve_report.status==='ok') toast(`Self-improvement: added ${r.improve_report.rules_added} rule(s)`);
+  }catch(e){thinking.innerHTML=`<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
+}
+
+async function refreshHealth(){
+  try{
+    const h=await api('/health');const neo=h.neo4j&&h.neo4j.ok;
+    const llm=h.llm||{};
+    const llmOk=!!llm.ok;
+    const prov=llm.primary||'?';
+    const neoErr=(!neo&&h.neo4j&&h.neo4j.error)?String(h.neo4j.error):'';
+    const llmErr=(!llmOk&&llm.error)?String(llm.error):'';
+    const tips=[neo?(h.neo4j.uri||'Neo4j connected'):(neoErr||'Neo4j unreachable')];
+    if(llmOk) tips.push(llm.api||'Vox reachable');
+    else tips.push(llmErr||'Vox unreachable');
+    $('#health').title=tips.join('\n');
+    $('#health').innerHTML=`<span class="dot ${neo?'ok':'bad'}"></span>Neo4j ${neo?'connected':'disconnected'} · <span class="dot ${llmOk?'ok':'bad'}"></span>LLM: ${esc(llmOk?prov:prov+' unreachable')}`;
+  }catch(e){$('#health').innerHTML='<span class="dot bad"></span>Health check failed';}
+}
+
+$('#send').onclick=()=>ask();
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter')ask();});
+$('#btn-stats').onclick=async()=>{try{const s=await api('/api/stats');
+  alert(JSON.stringify(s,null,2));}catch(e){toast(e.message);}};
+$('#btn-improve').onclick=async()=>{toast('Distilling experience into rules…');try{const r=await api('/api/improve',{force:true});
+  toast(r.status==='ok'?`Done: added ${r.rules_added} rule(s), reviewed ${r.cases_reviewed} case(s)`:'Skipped: '+(r.reason||r.error||''));}catch(e){toast(e.message);}};
+$('#btn-schema').onclick=async()=>{toast('Refreshing schema…');try{await api('/api/schema/refresh',{});toast('Schema refreshed');}catch(e){toast(e.message);}};
+function scroll(){window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});}
+refreshHealth();
+</script>
+</body>
+</html>

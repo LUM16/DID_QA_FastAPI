@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "locale": "English_United States.1252",
+  "metadata": {
+    "appmode": "python-fastapi",
+    "entrypoint": "app:app"
+  },
+  "python": {
+    "version": "3.13.0",
+    "package_manager": {
+      "name": "pip",
+      "version": "24.2",
+      "package_file": "requirements.txt"
+    }
+  },
+  "environment": {
+    "python": {
+      "requires": "~=3.11.0"
+    }
+  },
+  "files": {
+    ".env.example": {
+      "checksum": "8e308fb2278c242b241b9bc24a137246"
+    },
+    ".github/agents/did-neo4j-qa.agent.md": {
+      "checksum": "19f2297ac932cb85685639d98b017b2c"
+    },
+    ".gitignore": {
+      "checksum": "fcaf0cd22d80f46b881d6d8afaceb503"
+    },
+    ".python-version": {
+      "checksum": "9685208dd0aa86cd4c849e6291c5bce2"
+    },
+    ".rscignore": {
+      "checksum": "e8ab67d8d905fff239766d0931c08d01"
+    },
+    "GITHUB_DEPLOY.md": {
+      "checksum": "e6fdb99f8e4faa38729dbf5a3c167331"
+    },
+    "README.md": {
+      "checksum": "6bebe3e01d57a68256e4bfb94c6c993d"
+    },
+    "agent.py": {
+      "checksum": "1b8189aa855e8de90975649a9826ff7e"
+    },
+    "app.py": {
+      "checksum": "dd858fef2fa23778b7eba0681fbb3bd0"
+    },
+    "docs/examples/lot_tlf_sdtm_adam.md": {
+      "checksum": "a172266966f13840b7e68538a3e98170"
+    },
+    "docs/examples/person_productivity.md": {
+      "checksum": "fedb9b39d8a2819fcf134e5c743b0de4"
+    },
+    "docs/examples/query_index.md": {
+      "checksum": "1590746a3d5ce1c23c032e1c1c84f651"
+    },
+    "docs/examples/reporting_dashboard.md": {
+      "checksum": "52f3e703fb20a3b8bd954ad858ca7593"
+    },
+    "docs/examples/sensitive_excluded.md": {
+      "checksum": "90848ca9cdc55b6efa40bfacd157941e"
+    },
+    "docs/examples/study_delivery.md": {
+      "checksum": "9693f259390e152213c313e76623f450"
+    },
+    "docs/examples/team_manager.md": {
+      "checksum": "1d523ecea24dc4d2d71963206ea1e7d5"
+    },
+    "docs/examples/uncategorized.md": {
+      "checksum": "504279fef425bf775001b2d4b74ba8e6"
+    },
+    "docs/examples/workload_planning.md": {
+      "checksum": "f971b1f9676371f84d0c0df986253e0a"
+    },
+    "docs/schema.md": {
+      "checksum": "4f2a085890b7a85a3007bdb4a99f8176"
+    },
+    "docs/skill.md": {
+      "checksum": "fbbf37fd9b0ccc6207d412ab1009bd02"
+    },
+    "du_team_recommendation.py": {
+      "checksum": "a1b83f199e434d828f77ddf18b20a4b3"
+    },
+    "effort_prediction.py": {
+      "checksum": "64139647746bda1075a16bb2c9483e78"
+    },
+    "example_memory.py": {
+      "checksum": "c827462e57ce2b94be36c969eaac4de6"
+    },
+    "export.py": {
+      "checksum": "0b301c8f4966b61922928262a80e5b07"
+    },
+    "neo4j_client.py": {
+      "checksum": "bd3857472876524214593b2e328b9da7"
+    },
+    "requirements.txt": {
+      "checksum": "c4465790326ccd344b3a676cda08e2c9"
+    },
+    "result_presentation.py": {
+      "checksum": "12450d1fe383c00670e4b8ebfea76ce0"
+    },
+    "start-local.bat": {
+      "checksum": "e5e0e566c72608f98a73af9b7c769da0"
+    },
+    "tlf_person_allocation.py": {
+      "checksum": "e8086550d36447fd6dfe6632732d830e"
+    },
+    "vox_client.py": {
+      "checksum": "3b57fd80a4df6b3dde7c25305a0dadfd"
+    },
+    "web/static/index.html": {
+      "checksum": "e25e7e676b33f47a4eaeca11056aec0b"
+    }
+  }
+}
