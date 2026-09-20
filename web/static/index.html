@@ -722,6 +722,59 @@ async function download(cypher,fmt){if(!cypher){toast('No query available to exp
   const res=await api('/api/export',{cypher,format:fmt});const blob=await res.blob();
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='did_result.'+fmt;a.click();}
 
+function renderPersonChoice(data, originalQuestion, provider){
+  // Only mentions with several candidates get a picker; the ones the matcher
+  // already settled (certain) are listed as read-only context, because their
+  // rewrite is merely deferred so the whole prompt changes in one pass.
+  const box=document.createElement('div');box.className='msg ai';
+  const items=data.person_match.ambiguous||[];
+  const open=items.filter(it=>!it.certain);
+  const settled=items.filter(it=>it.certain);
+  const rows=open.map(it=>{
+    const opts=(it.choices||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    return `<div style="margin:6px 0">
+      <div class="muted" style="font-size:12px">Who is “${esc(it.mention)}”?</div>
+      <select data-mention="${esc(it.mention)}" style="margin-top:4px;padding:4px 6px">${opts}</select>
+    </div>`;
+  }).join('');
+  const known=settled.length
+    ? `<div class="muted" style="font-size:12px;margin-top:6px">Already matched: ${
+        settled.map(it=>`“${esc(it.mention)}” → ${esc(it.default)}`).join(', ')}</div>`
+    : '';
+  box.innerHTML=`<div class="bubble">
+    <div>Please confirm who each name refers to before I run the query:</div>
+    ${rows}
+    ${known}
+    <button class="pc-go" style="margin-top:8px">Confirm and continue</button>
+  </div>`;
+  chat.appendChild(box);scroll();
+  box.querySelector('.pc-go').onclick=async()=>{
+    const choices={};
+    box.querySelectorAll('select[data-mention]').forEach(s=>{choices[s.dataset.mention]=s.value;});
+    box.querySelector('.pc-go').disabled=true;
+    const thinking=document.createElement('div');thinking.className='msg ai';
+    thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
+    try{
+      const r=await api('/api/query',{question:originalQuestion,history:conv.slice(-12),provider,
+        person_match:data.person_match,person_choices:choices});
+      thinking.remove();
+      if(r.needs_person_choice){renderPersonChoice(r,originalQuestion,provider);return;}
+      showResolvedQuestion(r, originalQuestion);
+      addResult(r);
+    }catch(e){thinking.innerHTML=`<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
+  };
+}
+
+function showResolvedQuestion(r, originalQuestion){
+  // Surface the prompt the agent actually ran, when name resolution changed it.
+  const q=r.question||'';
+  if(!q || q===originalQuestion) return;
+  const d=document.createElement('div');d.className='msg ai';
+  d.innerHTML=`<div class="bubble muted" style="font-size:12px">
+    Resolved question: <span style="color:var(--c-text)">${esc(q)}</span></div>`;
+  chat.appendChild(d);scroll();
+}
+
 async function ask(preset){
   const inp=$('#q');
   const q=String(preset!==undefined?preset:inp.value).trim();
@@ -733,7 +786,10 @@ async function ask(preset){
   const provider=$('#provider').value||null;
   try{
     const r=await api('/api/query',{question:q,history:conv.slice(-12),provider});
-    thinking.remove();addResult(r);
+    thinking.remove();
+    if(r.needs_person_choice){renderPersonChoice(r,q,provider);return;}
+    showResolvedQuestion(r, q);
+    addResult(r);
     if(r.improve_report&&r.improve_report.status==='ok') toast(`Self-improvement: added ${r.improve_report.rules_added} rule(s)`);
   }catch(e){thinking.innerHTML=`<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
 }

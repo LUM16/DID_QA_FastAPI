@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from agent import ask as agent_ask
 from agent import _read_doc
 from example_memory import get_memory
+from match_person import apply_person_choices, match_person_in_prompt
 from export import to_csv, to_json
 from neo4j_client import (
     connection_summary,
@@ -56,6 +57,10 @@ class QueryBody(BaseModel):
     history: list[dict[str, Any]] = Field(default_factory=list)
     provider: str | None = None
     refresh_schema: bool = False
+    # Disambiguation round-trip: the client echoes back the match result it was
+    # given plus the user's picks, so the roster does not have to be re-matched.
+    person_match: dict[str, Any] | None = None
+    person_choices: dict[str, str] = Field(default_factory=dict)
 
 
 class FeedbackBody(BaseModel):
@@ -242,18 +247,54 @@ def refresh_schema() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+def _person_payload(match: dict[str, Any]) -> dict[str, Any]:
+    """Trim a match result down to what the browser needs for disambiguation."""
+    return {
+        "prompt": match.get("prompt", ""),
+        "status": match.get("status", ""),
+        "mentions": match.get("mentions", []),
+        "resolved": match.get("resolved", []),
+        "ambiguous": match.get("ambiguous", []),
+        "unmatched": match.get("unmatched", []),
+    }
+
+
 @app.post("/api/query")
-def query(body: QueryBody) -> dict[str, Any]:
+def query(body: QueryBody, request: Request) -> dict[str, Any]:
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
     started = time.perf_counter()
+
+    # Step 1 - normalise person mentions to official roster names.
+    try:
+        if body.person_match is not None:
+            match = apply_person_choices(body.person_match, body.person_choices)
+        else:
+            match = match_person_in_prompt(body.question.strip(), request=request)
+    except Exception as exc:  # noqa: BLE001
+        TIMING_LOG.warning("person matching skipped: %s", exc)
+        match = {"prompt": body.question.strip(), "status": "no_person", "ambiguous": []}
+
+    # Step 2 - if a mention still maps to several people, ask the user first.
+    if match.get("ambiguous"):
+        return {
+            "needs_person_choice": True,
+            "person_match": _person_payload(match),
+            "question": body.question.strip(),
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+        }
+
+    # Step 3 - hand the rewritten question to the agent.
+    question = (match.get("prompt") or body.question).strip()
     try:
         schema = get_schema() if body.refresh_schema else None
-        result = agent_ask(body.question.strip(), history=body.history, schema=schema)
+        result = agent_ask(question, history=body.history, schema=schema)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     payload = insight_payload(result, elapsed_ms)
+    payload["question"] = question
+    payload["person_match"] = _person_payload(match)
     log_query_timings(payload)
     return payload
 

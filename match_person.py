@@ -243,12 +243,43 @@ MATCH_STRATEGIES: dict[str, Callable[[str, tuple[dict[str, str], ...]], list[dic
 # --------------------------------------------------------------------------- #
 def _replace_mention(prompt: str, mention: str, official: str) -> str:
     """Replace the mention case-insensitively, on word boundaries where possible."""
-    if mention == official:
+    return _replace_mentions(prompt, {mention: official})
+
+
+def _replace_mentions(prompt: str, mapping: dict[str, str]) -> str:
+    """Replace every mention in one pass, so substituted names are never re-matched.
+
+    Rewriting mentions one at a time corrupts the prompt when an official name
+    contains another mention: "sizhen and chen" would first become
+    "Chen, Sizhen and chen", and the later "chen" rule would then also hit the
+    "Chen" that was just inserted. A single alternation pass avoids that because
+    `re.sub` never rescans the text it has already emitted.
+    """
+    pending = {
+        mention: official
+        for mention, official in (mapping or {}).items()
+        if mention and mention != official
+    }
+    if not pending:
         return prompt
-    pattern = re.compile(rf"(?<!\w){re.escape(mention)}(?!\w)", re.IGNORECASE)
-    if pattern.search(prompt):
-        return pattern.sub(official, prompt)
-    return re.sub(re.escape(mention), official, prompt, flags=re.IGNORECASE)
+
+    # Longest mentions first so "Chen, Sizhen" wins over the bare "Chen".
+    ordered = sorted(pending, key=len, reverse=True)
+    parts = []
+    for mention in ordered:
+        bounded = rf"(?<!\w){re.escape(mention)}(?!\w)"
+        # Fall back to a loose match only when the mention never appears as a
+        # standalone word (e.g. it is glued to punctuation the LLM dropped).
+        usable = bounded if re.search(bounded, prompt, re.IGNORECASE) else re.escape(mention)
+        parts.append(f"(?P<m{len(parts)}>{usable})")
+
+    pattern = re.compile("|".join(parts), re.IGNORECASE)
+
+    def _substitute(match: re.Match[str]) -> str:
+        index = int(match.lastgroup[1:])  # type: ignore[union-attr]
+        return pending[ordered[index]]
+
+    return pattern.sub(_substitute, prompt)
 
 
 def format_choice(person: dict[str, str]) -> str:
@@ -401,29 +432,61 @@ def match_person_in_prompt(
     # Step 3 - roster from Neo4j.
     roster = load_person_roster()
 
-    rewritten = prompt
     resolved: list[dict[str, str]] = [dict(item) for item in self_resolved]
-    ambiguous: list[dict[str, Any]] = []
     unmatched: list[str] = list(self_unresolved)
 
+    # Match every mention first, without touching the prompt. Rewriting as we
+    # go is what caused "sizhen and chen" to cascade into nested names.
+    candidates_by_mention: list[tuple[str, list[dict[str, str]]]] = []
     for mention in mentions:
         matched = match_fn(mention, roster)
-        if len(matched) == 1:
-            person = matched[0]
-            rewritten = _replace_mention(rewritten, mention, person["name"])
-            resolved.append(
-                {"mention": mention, "name": person["name"], "ntid": person.get("ntid", "")}
-            )
-        elif len(matched) > 1:
+        if matched:
+            candidates_by_mention.append((mention, [dict(p) for p in matched]))
+        else:
+            unmatched.append(mention)
+
+    # Only a genuinely ambiguous mention forces a round-trip. Several mentions
+    # that each match exactly one person need no confirmation, because
+    # `_replace_mentions` already substitutes them atomically.
+    defer = any(len(cands) > 1 for _, cands in candidates_by_mention)
+
+    ambiguous: list[dict[str, Any]] = []
+    replacements: dict[str, str] = {}
+
+    for mention, cands in candidates_by_mention:
+        if len(cands) > 1:
+            # Only these need a picker in the UI.
             ambiguous.append(
                 {
                     "mention": mention,
-                    "choices": [format_choice(person) for person in matched],
-                    "candidates": [dict(person) for person in matched],
+                    "choices": [format_choice(person) for person in cands],
+                    "candidates": cands,
+                    "default": "",
+                    "certain": False,
+                }
+            )
+        elif defer:
+            # Single match, but another mention is still open: hold it back so
+            # the whole prompt is rewritten in one go, and surface it to the UI
+            # as an already-settled entry (no prompt box, just context).
+            ambiguous.append(
+                {
+                    "mention": mention,
+                    "choices": [format_choice(cands[0])],
+                    "candidates": cands,
+                    "default": format_choice(cands[0]),
+                    "certain": True,
                 }
             )
         else:
-            unmatched.append(mention)
+            person = cands[0]
+            replacements[mention] = person["name"]
+            resolved.append(
+                {"mention": mention, "name": person["name"], "ntid": person.get("ntid", "")}
+            )
+
+    # Apply all substitutions at once; see `_replace_mentions` for why.
+    rewritten = _replace_mentions(prompt, replacements)
 
     if ambiguous:
         status = "needs_choice"
@@ -465,10 +528,13 @@ def apply_person_choices(result: dict[str, Any], choices: dict[str, str]) -> dic
     prompt = result["prompt"]
     resolved = [dict(item) for item in result.get("resolved", [])]
     still_ambiguous: list[dict[str, Any]] = []
+    replacements: dict[str, str] = {}
 
     for item in result.get("ambiguous", []):
         mention = item["mention"]
-        choice = (choices or {}).get(mention)
+        # Fall back to the pre-selected certain match when the UI sends nothing
+        # back for this mention; only genuinely open choices stay ambiguous.
+        choice = (choices or {}).get(mention) or item.get("default") or ""
         if not choice:
             still_ambiguous.append(item)
             continue
@@ -480,10 +546,12 @@ def apply_person_choices(result: dict[str, Any], choices: dict[str, str]) -> dic
             (c for c in item.get("candidates", []) if c.get("name") == official),
             {"name": official, "ntid": ""},
         )
-        prompt = _replace_mention(prompt, mention, candidate["name"])
+        replacements[mention] = candidate["name"]
         resolved.append(
             {"mention": mention, "name": candidate["name"], "ntid": candidate.get("ntid", "")}
         )
+
+    prompt = _replace_mentions(prompt, replacements)
 
     if still_ambiguous:
         status = "needs_choice"
@@ -536,47 +604,4 @@ def get_current_ntid(request: Request | None = None) -> str:
     if "@" in username:
         username = username.split("@", 1)[0]
     return username.strip().upper()
-
-# --------------------------------------------------------------------------- #
-# Usage example
-# --------------------------------------------------------------------------- #
-# Run with:  python test_match_person.py "predict C1071007_141 hours for Lumamman"
-#
-# Requires NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD (and optionally
-# NEO4J_DATABASE) in .env or the environment, because the roster is read live
-# from Neo4j via PERSON_ROSTER_QUERY.
-if __name__ == "__main__":
-
-    prompt = "list the delivery for Chen"
-    prompt = "list the delivery for riven"
-    prompt = "list the delivery for chens291"
-    prompt = "list the delivery for zhenchao and chen"
-    prompt = "list the delivery for Chen, Sizhen"
-    prompt = "what is Zhenchao and my delivery this year"
-    # prompt = "list all the did for SDSA"
-
-    # 1. Inspect the roster loaded from Neo4j (Name + NTID).
-    roster = load_person_roster()
-
-    # 2. Resolve the mentions in the prompt.
-    result = match_person_in_prompt(prompt, strategy="layered")
-
-    print(f"\nOriginal prompt : {prompt}")
-    print(f"Rewritten prompt: {result['prompt']}")
-    print(f"Status          : {result['status']}")
-    print(f"Mentions        : {result['mentions']}")
-    print(f"Resolved        : {result['resolved']}")
-    print(f"Unmatched       : {result['unmatched']}")
-
-    # 3. When several people match a mention, present the choices and apply one.
-    #    In Streamlit this is where you would render st.selectbox(...).
-    final_prompt = result["prompt"]
-    for item in result["ambiguous"]:
-        print(f"\nAmbiguous mention {item['mention']!r}, choices:")
-        for choice in item["choices"]:
-            print("   ", choice)
-        # Demo: take the first choice; replace with the user's UI selection.
-        final_prompt = apply_person_choice(final_prompt, item["mention"], item["choices"][0])
-
-    print(f"\nFinal prompt    : {final_prompt}")
 
