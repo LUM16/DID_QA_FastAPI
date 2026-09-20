@@ -122,16 +122,132 @@ configuration examples and Python dependencies.
 | Token tracking | Token usage was accumulated only in app state. | Token usage is still returned to the app and is also attached to the Langfuse generation. |
 | Missing or incomplete tracing setup | Not applicable. | If credentials are incomplete or the package is missing after credentials are configured, a clear runtime error is raised. |
 
-## test
-```cmd
-C:\DID_QA\.venv\Scripts\python.exe -m streamlit run C:\DID_QA\app.py --server.headless true --browser.gatherUsageStats false --server.port 8501
+## 2026-09-20 10:20 - Query stage timing observability
+
+### Scope
+
+Added end-to-end and stage-level latency measurements for the standard Neo4j
+Q&A workflow and effort-prediction workflow. Timing data is available in the
+API response, the chat UI, and the server console when the application is
+started directly with `python app.py` or through Uvicorn.
+
+### Changes
+
+### 1. Standard-query stage timings
+
+The LangGraph workflow records the time spent in each applicable stage:
+
+| Stage | Meaning |
+|---|---|
+| `intent` | Prediction-versus-standard-query routing |
+| `prepare` | Live schema and business-context preparation |
+| `cypher_generation` | Vox generation of the read-only Cypher query |
+| `neo4j` | Neo4j query execution; repeated executions are accumulated |
+| `cypher_repair` | Optional Vox repair of a failed or empty query |
+| `presentation` | Table/chart presentation selection |
+| `answer_generation` | Optional natural-language answer generation |
+| `total` | End-to-end `/api/query` request time |
+
+Only stages that actually run are included. For example, a visual-only result
+does not include `answer_generation`, and a successful first query does not
+include `cypher_repair`.
+
+### 2. Effort-prediction stage timings
+
+Prediction requests report the applicable prediction pipeline stages:
+
+| Stage | Meaning |
+|---|---|
+| `intent` | Effort-prediction intent routing |
+| `prediction_parameters` | Person, DID, and as-of-date extraction |
+| `prediction_model` | Model loading, feature construction, and prediction |
+| `answer_generation` | Local formatting of the prediction response |
+| `total` | End-to-end `/api/query` request time |
+
+### 3. API and chat UI
+
+- `/api/query` keeps the existing `elapsed_ms` field for compatibility.
+- The response now also includes `timings_ms`, containing each measured stage
+  and the end-to-end `total`.
+- The chat result metadata includes an expandable **Stage timings** section.
+- Stage values are non-negative integer milliseconds.
+
+Example response fragment:
+
+```json
+{
+  "elapsed_ms": 5342,
+  "timings_ms": {
+    "intent": 0,
+    "prepare": 4,
+    "cypher_generation": 3150,
+    "neo4j": 128,
+    "presentation": 2050,
+    "total": 5342
+  }
+}
 ```
 
-```
-http://127.0.0.1:8501/
+### 4. Direct-run and server-console logging
+
+When the application is run locally:
+
+```powershell
+cd C:\Users\KONGF06\Documents\DID_QA_FastAPI
+.\.venv\Scripts\python.exe app.py
 ```
 
+each completed query writes one structured line to the Uvicorn console:
+
+```text
+DID query timings | intent=0ms | prepare=4ms | cypher_generation=3150ms | neo4j=128ms | presentation=2050ms | total=5342ms | rows=5 | status=ok
 ```
+
+The log records stage durations, row count, and success/error status. It does
+not record the user's question text, reducing the risk of business content
+being copied into local or Posit Connect logs.
+
+### Before-and-after comparison
+
+| Area | Before | After |
+|---|---|---|
+| API latency | Only one end-to-end `elapsed_ms` value. | `elapsed_ms` remains, and `timings_ms` identifies the applicable pipeline stages. |
+| Chat UI | Displayed total latency and token usage. | Also exposes an expandable stage-by-stage timing breakdown. |
+| Direct `app.py` execution | Uvicorn logged HTTP access information only. | Each completed query also emits one structured timing line. |
+| Posit Connect logs | No query-pipeline latency breakdown. | The same structured timing line is available in server logs. |
+| Privacy | No timing-specific logs. | Timing logs deliberately omit question text and returned row contents. |
+| Prediction diagnostics | Prediction latency was included only in total request time. | Parameter extraction, model execution, and response formatting are measured separately. |
+
+### Validation status
+
+- 21 timing, prediction-routing, and result-presentation tests passed.
+- The complete local suite ran 65 tests: 64 passed, and one unrelated existing
+  export test could not find
+  `artifacts/did_effort_similarity_cache.joblib` in the local environment.
+- Starting the application with `python app.py` returned HTTP 200 from
+  `http://127.0.0.1:8010/`.
+- The local page contained the expected DID Insight application content.
+- Pylance/editor diagnostics reported no errors in the changed Python files.
+- `git diff --check` completed without whitespace errors.
+- Production deployment checksums in `manifest.json` were updated for the
+  changed application and documentation files included in the deployment.
+
+## Local test
+
+```powershell
+cd C:\Users\KONGF06\Documents\DID_QA_FastAPI
+.\.venv\Scripts\python.exe app.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:8010/
+```
+
+Optional Langfuse trace review:
+
+```text
 https://cloud.langfuse.com
 ```
 
