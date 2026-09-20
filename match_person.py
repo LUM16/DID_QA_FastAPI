@@ -20,6 +20,7 @@ import re
 from difflib import SequenceMatcher
 from functools import lru_cache
 from typing import Any, Callable
+from starlette.requests import Request
 
 from neo4j_client import load_env, run_cypher
 from vox_client import add_usage, chat, empty_usage
@@ -264,7 +265,7 @@ def format_choice(person: dict[str, str]) -> str:
 # Longer alternatives come first so "myself" is not consumed by "my".
 SELF_REFERENCE = re.compile(
     r"(?<!\w)(?:i'm|i've|myself|mine|my|me|i)(?!\w)"
-    r"|我们|咱们|我方|本人|我|咱|俺",
+    r"|我们|咱们|我方|本人|我",
     re.IGNORECASE,
 )
 
@@ -297,8 +298,9 @@ def find_person_by_ntid(
 
 def resolve_self_references(
     prompt: str,
-    ntid_fn: Callable[[], str] | None = None,
+    ntid_fn: Callable[..., str] | None = None,
     roster: tuple[dict[str, str], ...] | None = None,
+    request: Request | None = None,
 ) -> tuple[str, list[dict[str, str]], list[str]]:
     """Replace "I"/"我"-style mentions with the current user's official name.
 
@@ -310,12 +312,16 @@ def resolve_self_references(
       unresolved : the self-reference tokens left untouched because the current
                    NTID is unavailable or absent from the roster.
     """
-    ntid_fn = get_current_ntid if ntid_fn is None else ntid_fn
     tokens = find_self_references(prompt)
     if not tokens:
         return prompt, [], []
 
-    ntid = (ntid_fn() or "").strip()
+    # Default resolver reads the Posit Connect headers off the FastAPI request;
+    # a caller-supplied `ntid_fn` is treated as a zero-argument callable.
+    if ntid_fn is None:
+        ntid = (get_current_ntid(request) or "").strip()
+    else:
+        ntid = (ntid_fn() or "").strip()
     person = find_person_by_ntid(ntid, roster) if ntid else None
     if person is None:
         # Fall back to the bare NTID when it is not in the roster, so downstream
@@ -342,7 +348,8 @@ def match_person_in_prompt(
     prompt: str,
     strategy: str = "layered",
     chat_fn: Callable[..., tuple[str, dict[str, int]]] = chat,
-    ntid_fn: Callable[[], str] | None = None,
+    ntid_fn: Callable[..., str] | None = None,
+    request: Request | None = None,
 ) -> dict[str, Any]:
     """Resolve person mentions in `prompt` against Neo4j Person nodes.
 
@@ -373,7 +380,7 @@ def match_person_in_prompt(
     # Step 0 - resolve "I"/"我" against the logged-in user before the LLM sees
     # the prompt, so the extractor only deals with real names.
     prompt, self_resolved, self_unresolved = resolve_self_references(
-        prompt, ntid_fn=ntid_fn
+        prompt, ntid_fn=ntid_fn, request=request
     )
 
     mentions, extraction_usage = extract_person_mentions(prompt, chat_fn)
@@ -496,32 +503,39 @@ def apply_person_choices(result: dict[str, Any], choices: dict[str, str]) -> dic
     }
 
 
+def get_current_ntid(request: Request | None = None) -> str:
+    """NTID from the Posit Connect viewer, if this request is running as that user.
 
-def get_current_ntid() -> str:
+    Returns "" when no request is available (e.g. a script run outside FastAPI).
     """
-    Get current Posit Connect viewer NTID.
-    """
-
-    # Posit Connect 当前登录用户
-    username = (
-        os.environ.get("CONNECT_CONTENT_VIEWER")
-        or os.environ.get("RSC_CONTENT_VIEWER")
+    if request is None:
+        return ""
+    raw = (
+        request.headers.get("rstudio-connect-credentials")
+        or request.headers.get("posit-connect-credentials")
         or ""
     ).strip()
-    print(f"UserName: {username}")
-
+    username = ""
+    if raw:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = {}
+        if isinstance(data, dict):
+            username = str(data.get("user") or data.get("username") or "").strip()
+    if not username:
+        username = (
+            request.headers.get("x-forwarded-user")
+            or request.headers.get("remote-user")
+            or ""
+        ).strip()
     if not username:
         return ""
-
-    # DOMAIN\\username -> username
     if "\\" in username:
         username = username.rsplit("\\", 1)[-1]
-
-    # username@domain.com -> username
     if "@" in username:
         username = username.split("@", 1)[0]
-
-    return username.lower()
+    return username.strip().upper()
 
 # --------------------------------------------------------------------------- #
 # Usage example
@@ -539,7 +553,7 @@ if __name__ == "__main__":
     prompt = "list the delivery for zhenchao and chen"
     prompt = "list the delivery for Chen, Sizhen"
     prompt = "what is Zhenchao and my delivery this year"
-    prompt = "list all the did for SDSA"
+    # prompt = "list all the did for SDSA"
 
     # 1. Inspect the roster loaded from Neo4j (Name + NTID).
     roster = load_person_roster()
