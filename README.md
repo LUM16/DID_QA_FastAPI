@@ -138,6 +138,9 @@ The `/api/query` response includes `elapsed_ms` for end-to-end latency and a
 `timings_ms` object with the applicable pipeline stages, such as intent routing,
 prompt preparation, Cypher generation, Neo4j execution, repair, presentation,
 and answer generation. The chat UI exposes these values under **Stage timings**.
+When the app is started with `python app.py` or Uvicorn, each completed query
+also writes the same stage breakdown to the server console without logging the
+question text.
 
 Prediction requests continue with their separate LLM-first parameter extraction,
 Neo4j validation, and V3 model calculation. Python computes P50/P80/P90; the

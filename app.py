@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import time
 from pathlib import Path
@@ -31,6 +32,19 @@ from vox_client import vox_health
 
 STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 MAX_EXPORT_ROWS = 20000
+TIMING_LOG = logging.getLogger("uvicorn.error")
+TIMING_STAGE_ORDER = (
+    "intent",
+    "prepare",
+    "cypher_generation",
+    "neo4j",
+    "cypher_repair",
+    "prediction_parameters",
+    "prediction_model",
+    "presentation",
+    "answer_generation",
+    "total",
+)
 
 app = FastAPI(title="DID Insight", version="2.0.0")
 if STATIC_DIR.exists():
@@ -162,6 +176,23 @@ def insight_payload(result: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
     }
 
 
+def log_query_timings(payload: dict[str, Any]) -> None:
+    timings = payload.get("timings_ms")
+    if not isinstance(timings, dict):
+        return
+    details = [
+        f"{stage}={timings[stage]}ms"
+        for stage in TIMING_STAGE_ORDER
+        if stage in timings
+    ]
+    TIMING_LOG.info(
+        "DID query timings | %s | rows=%s | status=%s",
+        " | ".join(details),
+        payload.get("row_count", 0),
+        "error" if payload.get("error") else "ok",
+    )
+
+
 def neo4j_health() -> dict[str, Any]:
     load_env()
     uri = os.environ.get("NEO4J_URI", connection_summary())
@@ -222,7 +253,9 @@ def query(body: QueryBody) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    return insight_payload(result, elapsed_ms)
+    payload = insight_payload(result, elapsed_ms)
+    log_query_timings(payload)
+    return payload
 
 
 @app.post("/api/feedback")
