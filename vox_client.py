@@ -265,19 +265,30 @@ def models_vox_genai() -> list[str]:
     return list(dict.fromkeys(model_ids))
 
 
-def chat(system: str, user: str, temperature: float = 0.1) -> tuple[str, dict[str, int]]:
+def chat(
+    system: str,
+    user: str,
+    temperature: float = 0.1,
+    max_tokens: int | None = None,
+) -> tuple[str, dict[str, int]]:
     client, model = build_llm_client()
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
 
+    request_options: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        request_options["max_tokens"] = max_tokens
+
     with _langfuse_generation(model, messages, temperature) as generation:
         try:
             resp = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
+                **request_options,
             )
         except Exception as first_err:
             if _vox_configured() and "401" in str(first_err):
@@ -285,9 +296,7 @@ def chat(system: str, user: str, temperature: float = 0.1) -> tuple[str, dict[st
                     get_vox_access_token(force_refresh=True)
                     client, model = build_llm_client()
                     resp = client.chat.completions.create(
-                        model=model,
-                        messages=messages,
-                        temperature=temperature,
+                        **request_options,
                     )
                 except Exception as retry_err:
                     log.exception("Vox chat failed after 401 retry")

@@ -79,13 +79,17 @@ DEFAULT_EXAMPLES = (
 SAFE_EXAMPLE_FILES = tuple(
     name for name in DEFAULT_EXAMPLES if name != "sensitive_excluded.md"
 )
-SKILL_MAX_CHARS = 6000
-SCHEMA_MAX_CHARS = 12000
-EXAMPLE_MAX_CHARS = 5000
-MAX_EXAMPLE_FILES = 3
+SKILL_MAX_CHARS = 3000
+SCHEMA_MAX_CHARS = 6000
+EXAMPLE_MAX_CHARS = 2200
+MAX_EXAMPLE_FILES = 1
 HISTORY_MAX_MESSAGES = 4
 HISTORY_MESSAGE_MAX_CHARS = 500
 ROWS_MAX_CHARS = 6000
+GENERATION_MAX_TOKENS = 400
+ANSWER_MAX_TOKENS = 600
+INTENT_MAX_TOKENS = 120
+PRESENTATION_MAX_TOKENS = 180
 
 TASK_QUESTION_RE = re.compile(
     r"\b(?:task|tasks|任务)\b",
@@ -271,7 +275,9 @@ Recent conversation:
 
 Current request:
 {question}"""
-    raw, usage = _chat(system, user, temperature=0)
+    raw, usage = _chat(
+        system, user, temperature=0, max_tokens=INTENT_MAX_TOKENS
+    )
     payload = _extract_json_object(raw)
     intent = payload.get("intent")
     if intent not in {"effort_prediction", "neo4j_query"}:
@@ -605,6 +611,18 @@ def _wants_delivery_breakdown(question: str) -> bool:
     return _is_task_question(question) or _is_delivery_question(question)
 
 
+CHART_REQUEST_RE = re.compile(
+    r"(?:chart|graph|plot|trend|distribution|breakdown|compare|comparison|"
+    r"over time|monthly|weekly|daily|趋势|图表|分布|对比|变化)",
+    re.IGNORECASE,
+)
+
+
+def _needs_presentation_selection(question: str) -> bool:
+    """Use the presentation LLM only when the question suggests a chart."""
+    return bool(CHART_REQUEST_RE.search(question or ""))
+
+
 def _drop_zero_task_columns(
     rows: list[dict[str, Any]], fields: list[str]
 ) -> list[str]:
@@ -756,7 +774,7 @@ User question: {question}
 
 Generate a read-only Cypher query."""
 
-    raw, usage = _chat(system, user)
+    raw, usage = _chat(system, user, max_tokens=GENERATION_MAX_TOKENS)
     return expand_legacy_task_properties(_extract_cypher(raw)), usage
 
 
@@ -805,18 +823,18 @@ Use the schema and business intent to repair the query so it returns the expecte
 
 Generate a corrected read-only Cypher query."""
 
-    raw, usage = _chat(system, user)
+    raw, usage = _chat(system, user, max_tokens=GENERATION_MAX_TOKENS)
     return expand_legacy_task_properties(_extract_cypher(raw)), usage
 
 
-def _rows_for_prompt(rows: list[dict[str, Any]]) -> str:
+def _rows_for_prompt(rows: list[dict[str, Any]], max_chars: int) -> str:
     """Serialize complete rows without exceeding the prompt budget."""
     selected: list[dict[str, Any]] = []
     for row in rows:
         candidate = json.dumps(
             [*selected, row], ensure_ascii=False, default=str, separators=(",", ":")
         )
-        if len(candidate) > ROWS_MAX_CHARS:
+        if len(candidate) > max_chars:
             break
         selected.append(row)
     return json.dumps(selected, ensure_ascii=False, default=str, separators=(",", ":"))
@@ -824,13 +842,15 @@ def _rows_for_prompt(rows: list[dict[str, Any]]) -> str:
 
 def answer_from_rows(
     question: str,
-    cypher: str,
+    _cypher: str,
     rows: list[dict[str, Any]],
     *,
     structured_presentation: bool = False,
 ) -> tuple[str, dict[str, int]]:
-    payload = _rows_for_prompt(rows)
     wants_breakdown = _wants_delivery_breakdown(question)
+    payload = _rows_for_prompt(
+        rows, ROWS_MAX_CHARS if wants_breakdown else 3500
+    )
     if wants_breakdown:
         detail_rule = (
             "List each matching delivery. Never answer with only a grand total. "
@@ -859,16 +879,14 @@ Rules:
 5. {detail_rule}
 6. Prefer business names over database field names."""
 
+    result_source = "read-only Cypher query" if _cypher else "query result"
     user = f"""User question: {question}
 
-Cypher executed:
-{cypher}
-
-Query results (JSON):
+Query results from a {result_source} ({len(rows)} total rows; only the relevant prefix is shown):
 {payload}
 
 Write the answer now."""
-    return _chat(system, user)
+    return _chat(system, user, max_tokens=ANSWER_MAX_TOKENS)
 
 
 def _needs_repair(question: str, rows: list[dict[str, Any]], cypher: str) -> bool:
@@ -999,13 +1017,29 @@ def _answer(state: AgentState) -> AgentState:
             empty_usage(),
             None,
         )
-    else:
+    elif _needs_presentation_selection(state["question"]):
         visualization, presentation_usage, presentation_warning = select_result_presentation(
             state["question"],
             rows,
-            chat=lambda system, user: _chat(system, user, temperature=0),
+            chat=lambda system, user: _chat(
+                system,
+                user,
+                temperature=0,
+                max_tokens=PRESENTATION_MAX_TOKENS,
+            ),
         )
-    timings = _add_timing(state, "presentation", started)
+    else:
+        visualization, presentation_usage, presentation_warning = (
+            None,
+            empty_usage(),
+            None,
+        )
+    timings = (
+        _add_timing(state, "presentation", started)
+        if _wants_delivery_breakdown(state["question"])
+        or _needs_presentation_selection(state["question"])
+        else dict(state.get("timings_ms", {}))
+    )
     updates: AgentState = {
         "usage": _add_state_usage(state, presentation_usage),
         "timings_ms": timings,

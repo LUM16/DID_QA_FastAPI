@@ -11,6 +11,26 @@ from result_presentation import select_result_presentation, validate_presentatio
 
 
 class ResultPresentationTests(unittest.TestCase):
+    @patch("agent.run_cypher", return_value=[{"study": "C100", "status": "Completed"}])
+    @patch("agent._chat")
+    def test_generic_query_skips_presentation_llm(
+        self, mock_chat, _mock_run_cypher
+    ) -> None:
+        mock_chat.side_effect = [
+            ("```cypher\nMATCH (s:Study) RETURN 'C100' AS study, 'Completed' AS status\n```", {}),
+            ("C100 is completed.", {"total_tokens": 4}),
+        ]
+        with patch(
+            "agent.classify_effort_prediction_intent",
+            return_value=(False, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}),
+        ):
+            result = agent.ask("What is the status of C100?", schema={"labels": []})
+
+        self.assertEqual(mock_chat.call_count, 2)
+        self.assertIsNone(result["visualization"])
+        self.assertEqual(result["answer"], "C100 is completed.")
+        self.assertNotIn("presentation", result["timings_ms"])
+
     def test_chart_selection_uses_only_returned_fields_and_keeps_table_fallback(self) -> None:
         rows = [{"month": "2026-08", "hours": 10.5}, {"month": "2026-09", "hours": 12.0}]
 

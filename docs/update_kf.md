@@ -262,3 +262,98 @@ https://cloud.langfuse.com
 - Langfuse tracing smoke tests passed for both disabled and configured modes
   using local test doubles in the project `.venv`.
 - `git diff --check` completed without whitespace errors.
+
+## 2026-09-20 14:20 - LLM generation latency reduction
+
+### Scope
+
+Reduced unnecessary Vox calls and bounded the amount of prompt/output data used
+by Cypher and answer generation.
+
+### Changes
+
+- Generic result queries no longer call the presentation-selection LLM by
+  default. The presentation LLM is used only when the question explicitly
+  suggests a chart, trend, comparison, distribution, or time series.
+- Task and delivery breakdowns continue to use the deterministic local table
+  path.
+- Cypher domain context now loads at most one relevant example, with smaller
+  documentation slices (`skill.md` 3,000 characters, `schema.md` 6,000
+  characters, and each example 2,200 characters).
+- Vox calls now accept task-specific `max_tokens` limits: intent 120, Cypher
+  generation and repair 400, presentation selection 180, and answer generation
+  600.
+- Answer prompts no longer repeat the full executed Cypher and use a smaller
+  3,500-character row budget for non-breakdown answers. Delivery/task answers
+  retain the 6,000-character budget because they must list matching deliveries.
+
+### Expected effect
+
+The common path changes from:
+
+```text
+Cypher generation -> presentation selection -> answer generation
+```
+
+to:
+
+```text
+Cypher generation -> answer generation
+```
+
+unless the user requests a chart-like result. This removes one network
+round-trip for ordinary questions and reduces prompt/completion processing for
+both remaining generation calls.
+
+## 2026-09-20 17:03 - Follow-up latency optimization backlog
+
+### Recommended next improvements
+
+The remaining latency opportunities were reviewed against the current request
+path. The following items are prioritized by expected end-to-end impact:
+
+1. Reuse a process-level Neo4j Driver instead of creating and closing a Driver
+   for every query. This allows the Neo4j connection pool and Bolt connections
+   to be reused across person matching, the main query, and repair execution.
+2. Cache the OpenAI-compatible Vox client alongside the cached access token so
+   repeated LLM calls can reuse HTTP connections. Recreate the client only when
+   the endpoint, model, or refreshed token changes.
+3. Add a local fast path before person-name extraction. Questions containing
+   only study/DID, delivery, status, task, or other non-person intent should
+   bypass the person-extraction LLM.
+4. Build local indexes for the cached person roster. Exact name and NTID
+   matching should use dictionary lookups; substring and fuzzy matching should
+   remain fallback strategies.
+5. Reduce repair calls with local Cypher validation and empty-result
+   classification. Clearly valid no-data results should return locally, while
+   syntax, property, date, or optional-match issues can still use one repair.
+6. Add deterministic templates for high-frequency questions such as DID status,
+   Study delivery lists, completed deliveries, person productivity, and task
+   breakdowns. Template hits can bypass Cypher generation entirely.
+7. Avoid rebuilding graph nodes and relationships for scalar/table queries.
+   Construct graph payloads only when the request or returned values require
+   graph visualization.
+8. Format simple scalar, count, status, and explicit table responses locally
+   instead of calling `answer_generation`.
+9. Use parameterized Cypher (`$study_id`, `$did`, `$ntid`) for extracted
+   identifiers so Neo4j can reuse execution plans and values are not embedded
+   in generated query text.
+10. Profile the slowest Cypher statements in Neo4j before adding indexes.
+    Check for label scans, Cartesian products, excessive expansions, and
+    unnecessary sorting; then add indexes for frequently filtered identifiers
+    such as Study.Name, Delivery.DID, Person.Name, and Person.NTID where the
+    execution plan supports them.
+
+### Additional observability
+
+To measure these changes, future timing logs should include whether the person
+LLM, presentation LLM, repair path, Cypher cache, reused Neo4j Driver, and
+graph serialization were used. Prompt character counts and completion token
+counts should also be recorded separately for Cypher and answer generation.
+
+### Suggested implementation order
+
+Start with Neo4j Driver reuse, Vox client reuse, and the person-matching fast
+path. Then add deterministic query/answer templates and local Cypher
+validation. Database indexes and query rewrites should follow `PROFILE`
+inspection rather than being applied blindly.
