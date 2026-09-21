@@ -286,29 +286,41 @@ def chat(
         request_options["max_tokens"] = max_tokens
 
     with _langfuse_generation(model, messages, temperature) as generation:
-        try:
-            resp = client.chat.completions.create(
-                **request_options,
-            )
-        except Exception as first_err:
-            if _vox_configured() and "401" in str(first_err):
+        def request_completion(options: dict[str, Any]) -> Any:
+            nonlocal client, model
+            try:
+                return client.chat.completions.create(**options)
+            except Exception as first_err:
+                if not (_vox_configured() and "401" in str(first_err)):
+                    log.exception("Vox chat failed")
+                    raise RuntimeError(
+                        _describe_vox_error(first_err, stage="chat")
+                    ) from first_err
                 try:
                     get_vox_access_token(force_refresh=True)
                     client, model = build_llm_client()
-                    resp = client.chat.completions.create(
-                        **request_options,
-                    )
+                    retry_options = dict(options)
+                    retry_options["model"] = model
+                    return client.chat.completions.create(**retry_options)
                 except Exception as retry_err:
                     log.exception("Vox chat failed after 401 retry")
                     raise RuntimeError(
                         _describe_vox_error(retry_err, stage="chat")
                     ) from retry_err
-            else:
-                log.exception("Vox chat failed")
-                raise RuntimeError(_describe_vox_error(first_err, stage="chat")) from first_err
 
+        resp = request_completion(request_options)
         text = (resp.choices[0].message.content or "").strip()
         usage = _usage_from_response(resp)
+        if not text and max_tokens is not None:
+            log.warning(
+                "Vox chat returned empty content with max_tokens=%s; retrying without max_tokens",
+                max_tokens,
+            )
+            retry_options = dict(request_options)
+            retry_options.pop("max_tokens", None)
+            resp = request_completion(retry_options)
+            text = (resp.choices[0].message.content or "").strip()
+            usage = add_usage(usage, _usage_from_response(resp))
         if generation is not None:
             generation.update(output=text, usage_details=usage)
         return text, usage

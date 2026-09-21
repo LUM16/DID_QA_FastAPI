@@ -357,3 +357,21 @@ Start with Neo4j Driver reuse, Vox client reuse, and the person-matching fast
 path. Then add deterministic query/answer templates and local Cypher
 validation. Database indexes and query rewrites should follow `PROFILE`
 inspection rather than being applied blindly.
+
+## 2026-09-21 10:00 - Empty limited LLM response fallback
+
+### Scope
+
+Added a safety fallback for the latency optimization that introduced
+task-specific `max_tokens` limits.
+
+### Changes
+
+- If Vox returns an empty chat message while a `max_tokens` limit is applied,
+  `vox_client.chat()` now retries the same request once without the token cap.
+- Retry usage is added to the original empty response usage so token accounting
+  remains conservative.
+- This protects Cypher generation from failing with `Could not parse Cypher
+  from model output:` when the model produces no visible content under a tight
+  completion cap.
+- Added a regression test covering the empty limited response retry path.
