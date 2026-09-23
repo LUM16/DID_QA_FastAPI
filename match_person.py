@@ -17,9 +17,10 @@ from __future__ import annotations
 import json
 import os
 import re
-from difflib import SequenceMatcher
 from functools import lru_cache
 from typing import Any, Callable
+
+from rapidfuzz.distance import Levenshtein
 from starlette.requests import Request
 
 from neo4j_client import load_env, run_cypher
@@ -174,34 +175,84 @@ def match_token(mention: str, roster: tuple[dict[str, str], ...]) -> list[dict[s
     return matched
 
 
+# A mention contained in a name (or in one of its tokens) is a deliberate
+# partial name far more often than a coincidence, so it floors at a high score
+# instead of being penalised for the characters it omits.
+CONTAINMENT_SCORE = 0.85
+
+
+def _edit_ratio(left: str, right: str) -> float:
+    """Levenshtein similarity in [0, 1]; 1.0 means identical.
+
+    Backed by rapidfuzz's C++ implementation. rapidfuzz scores two empty
+    strings as 1.0; we keep the 0.0 convention so an empty mention can never
+    float to the top of the candidate list.
+    """
+    if not left or not right:
+        return 0.0
+    return Levenshtein.normalized_similarity(left, right)
+
+
+def _name_tokens(name: str) -> list[str]:
+    """Normalized name parts, split on whitespace and commas."""
+    return [_normalize(part) for part in re.split(r"[\s,]+", str(name)) if _normalize(part)]
+
+
+def _similarity(key: str, name: str) -> float:
+    """Score a normalized mention against one roster name.
+
+    Uses Levenshtein (via rapidfuzz) rather than SequenceMatcher because a
+    single substituted letter splits SequenceMatcher's contiguous blocks and
+    roughly halves the score: "MAMMAN" vs "MANMAN" rates 0.50 there but 0.83
+    here, which is why that typo used to rank below unrelated names such as
+    "Ma, Mengran".
+
+    The mention is scored against the whole name *and* each token, so a given
+    name can match on its own instead of being dragged down by an unrelated
+    surname ("MAMMAN" vs "MANMAN" rather than vs "LUMANMAN").
+    """
+    whole = _normalize(name)
+    best = _edit_ratio(key, whole)
+    if key and key in whole:
+        best = max(best, CONTAINMENT_SCORE)
+    for token in _name_tokens(name):
+        best = max(best, _edit_ratio(key, token))
+        if key and key in token:
+            best = max(best, CONTAINMENT_SCORE)
+    return best
+
+
 def match_fuzzy(
     mention: str,
     roster: tuple[dict[str, str], ...],
-    threshold: float = 0.82,
-    margin: float = 0.06,
+    threshold: float = 0.45,
+    margin: float = 0.25,
+    n_max: int = 12,
 ) -> list[dict[str, str]]:
-    """Strategy D - SequenceMatcher similarity with a tie margin.
+    """Strategy D - token-aware edit-distance similarity with a tie margin.
 
-    Tolerates typos ("Lumamman" -> "Lumanman"). Scores every roster entry, keeps
+    Tolerates typos ("mamman" -> "Lu, Manman"). Scores every roster entry, keeps
     those at or above `threshold`, then returns only the entries within `margin`
-    of the best score, so a clear winner collapses to a single match while
-    genuine near-ties are surfaced for the user to choose.
+    of the best score, sorted by descending similarity and truncated to the top
+    `n_max` candidates, so the best matches are always the ones surfaced.
     """
     key = _normalize(mention)
     if not key:
         return []
 
-    scored = [
-        (SequenceMatcher(None, key, _normalize(person["name"])).ratio(), person)
-        for person in roster
-    ]
+    scored = [(_similarity(key, person["name"]), person) for person in roster]
     viable = [(score, person) for score, person in scored if score >= threshold]
     if not viable:
         return []
 
     best = max(score for score, _ in viable)
-    return [person for score, person in viable if best - score <= margin]
+    near_best = [(score, person) for score, person in viable if best - score <= margin]
+    # Descending score, then name, so equally-scored candidates stay stable.
+    near_best.sort(key=lambda item: (-item[0], _normalize(item[1]["name"])))
+    if n_max is not None and n_max > 0:
+        near_best = near_best[:n_max]
 
+    return [person for _, person in near_best]
 
 def match_ntid(mention: str, roster: tuple[dict[str, str], ...]) -> list[dict[str, str]]:
     """Strategy F - normalized equality against Person.NTID.
@@ -604,4 +655,52 @@ def get_current_ntid(request: Request | None = None) -> str:
     if "@" in username:
         username = username.split("@", 1)[0]
     return username.strip().upper()
+
+
+# --------------------------------------------------------------------------- #
+# Usage example
+# --------------------------------------------------------------------------- #
+# Run with:  python test_match_person.py "predict C1071007_141 hours for Lumamman"
+#
+# Requires NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD (and optionally
+# NEO4J_DATABASE) in .env or the environment, because the roster is read live
+# from Neo4j via PERSON_ROSTER_QUERY.
+# if __name__ == "__main__":
+
+#     # prompt = "list the delivery for Chen"
+#     # prompt = "list the delivery for riven"
+#     # prompt = "list the delivery for chens291"
+#     # prompt = "list the delivery for zhenchao and chen"
+#     # prompt = "list the delivery for Chen, Sizhen"
+#     prompt = "list the delivery for mamman"
+#     # prompt = "list all the did for SDSA"
+
+#     # 1. Inspect the roster loaded from Neo4j (Name + NTID).
+#     roster = load_person_roster()
+
+#     # 2. Resolve the mentions in the prompt.
+#     result = match_person_in_prompt(prompt, strategy="layered")
+
+#     print(f"\nOriginal prompt : {prompt}")
+#     print(f"Rewritten prompt: {result['prompt']}")
+#     print(f"Status          : {result['status']}")
+#     print(f"Mentions        : {result['mentions']}")
+#     print(f"Resolved        : {result['resolved']}")
+#     print(f"Unmatched       : {result['unmatched']}")
+
+#     # 3. When several people match a mention, present the choices and apply one.
+#     #    In Streamlit this is where you would render st.selectbox(...).
+#     final_prompt = result["prompt"]
+#     for item in result["ambiguous"]:
+#         print(f"\nAmbiguous mention {item['mention']!r}, choices:")
+#         for choice in item["choices"]:
+#             print("   ", choice)
+#         # Demo: take the first choice; replace with the user's UI selection.
+#         final_prompt = apply_person_choice(final_prompt, item["mention"], item["choices"][0])
+
+#     print(f"\nFinal prompt    : {final_prompt}")
+
+
+    
+
 

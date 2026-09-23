@@ -35,3 +35,7 @@ credentials.json
 # Generated effort-prediction data and models
 artifacts/
 data/
+
+# Sizhen for test
+test_extract_effort_person.py
+test_match_person.py
