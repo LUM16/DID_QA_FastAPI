@@ -557,6 +557,11 @@ def match_person_in_prompt(
     }
 
 
+# Sentinel the UI can send back for a mention the user does not want rewritten:
+# the mention is dropped from `ambiguous` and the prompt keeps its wording.
+KEEP_ORIGINAL = "__keep_original__"
+
+
 def apply_person_choice(prompt: str, mention: str, choice: str) -> str:
     """Rewrite `prompt` once the user picks a "Name [NTID]" entry in Streamlit."""
     official = choice.split(" [")[0].strip() if " [" in choice else choice.strip()
@@ -580,12 +585,19 @@ def apply_person_choices(result: dict[str, Any], choices: dict[str, str]) -> dic
     resolved = [dict(item) for item in result.get("resolved", [])]
     still_ambiguous: list[dict[str, Any]] = []
     replacements: dict[str, str] = {}
+    kept: list[str] = list(result.get("kept_original", []))
 
     for item in result.get("ambiguous", []):
         mention = item["mention"]
+        raw = (choices or {}).get(mention) or ""
+        if raw == KEEP_ORIGINAL:
+            # The user says none of the candidates is right: leave the mention
+            # verbatim in the prompt instead of forcing a wrong substitution.
+            kept.append(mention)
+            continue
         # Fall back to the pre-selected certain match when the UI sends nothing
         # back for this mention; only genuinely open choices stay ambiguous.
-        choice = (choices or {}).get(mention) or item.get("default") or ""
+        choice = raw or item.get("default") or ""
         if not choice:
             still_ambiguous.append(item)
             continue
@@ -619,6 +631,7 @@ def apply_person_choices(result: dict[str, Any], choices: dict[str, str]) -> dic
         "status": status,
         "resolved": resolved,
         "ambiguous": still_ambiguous,
+        "kept_original": kept,
     }
 
 

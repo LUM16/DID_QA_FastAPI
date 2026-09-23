@@ -61,6 +61,9 @@ class QueryBody(BaseModel):
     # given plus the user's picks, so the roster does not have to be re-matched.
     person_match: dict[str, Any] | None = None
     person_choices: dict[str, str] = Field(default_factory=dict)
+    # Set by the client after the user chose "continue with my original wording"
+    # for mentions that matched nobody, so we do not ask about them twice.
+    person_ack_unmatched: bool = False
 
 
 class FeedbackBody(BaseModel):
@@ -256,7 +259,14 @@ def _person_payload(match: dict[str, Any]) -> dict[str, Any]:
         "resolved": match.get("resolved", []),
         "ambiguous": match.get("ambiguous", []),
         "unmatched": match.get("unmatched", []),
+        "kept_original": match.get("kept_original", []),
     }
+
+
+def _unmatched_mentions(match: dict[str, Any]) -> list[str]:
+    """Mentions that found no roster candidate at all (self-references aside)."""
+    return [str(item) for item in (match.get("unmatched") or []) if str(item).strip()]
+
 
 
 @app.post("/api/query")
@@ -279,6 +289,19 @@ def query(body: QueryBody, request: Request) -> dict[str, Any]:
     if match.get("ambiguous"):
         return {
             "needs_person_choice": True,
+            "person_match": _person_payload(match),
+            "question": body.question.strip(),
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+        }
+
+    # Step 2b - nothing matched a mention: let the user continue with the
+    # original wording or abort, rather than silently querying a wrong name.
+    unmatched = _unmatched_mentions(match)
+    if unmatched and not body.person_ack_unmatched:
+        return {
+            "needs_person_choice": True,
+            "unmatched_only": True,
+            "unmatched": unmatched,
             "person_match": _person_payload(match),
             "question": body.question.strip(),
             "elapsed_ms": int((time.perf_counter() - started) * 1000),

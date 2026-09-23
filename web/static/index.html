@@ -722,11 +722,50 @@ async function download(cypher,fmt){if(!cypher){toast('No query available to exp
   const res=await api('/api/export',{cypher,format:fmt});const blob=await res.blob();
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='did_result.'+fmt;a.click();}
 
+const KEEP_ORIGINAL='__keep_original__';
+
 function renderPersonChoice(data, originalQuestion, provider){
-  // Only mentions with several candidates get a picker; the ones the matcher
-  // already settled (certain) are listed as read-only context, because their
-  // rewrite is merely deferred so the whole prompt changes in one pass.
+  // Three kinds of round-trip:
+  //   1. nothing matched        -> continue with the original wording, or abort
+  //   2. several candidates     -> pick one, keep the original wording, or abort
+  //   3. already settled (certain) mentions are listed as read-only context.
   const box=document.createElement('div');box.className='msg ai';
+  const run=async(extra)=>{
+    box.querySelectorAll('button').forEach(b=>{b.disabled=true;});
+    const thinking=document.createElement('div');thinking.className='msg ai';
+    thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
+    try{
+      const r=await api('/api/query',Object.assign({question:originalQuestion,history:conv.slice(-12),provider,
+        person_match:data.person_match},extra));
+      thinking.remove();
+      if(r.needs_person_choice){renderPersonChoice(r,originalQuestion,provider);return;}
+      showResolvedQuestion(r, originalQuestion);
+      addResult(r);
+    }catch(e){thinking.innerHTML=`<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
+  };
+  const abort=()=>{
+    box.querySelectorAll('button').forEach(b=>{b.disabled=true;});
+    const d=document.createElement('div');d.className='msg ai';
+    d.innerHTML='<div class="bubble muted">Aborted — the question was not sent.</div>';
+    chat.appendChild(d);scroll();
+  };
+
+  if(data.unmatched_only){
+    const names=(data.unmatched||[]).map(n=>`“${esc(n)}”`).join(', ');
+    box.innerHTML=`<div class="bubble">
+      <div>I could not match ${names} to anyone on the roster.</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">Continue with your original wording, or abort without querying.</div>
+      <div style="margin-top:8px">
+        <button class="pc-keep">Continue with original question</button>
+        <button class="pc-abort" style="margin-left:6px">Abort</button>
+      </div>
+    </div>`;
+    chat.appendChild(box);scroll();
+    box.querySelector('.pc-keep').onclick=()=>run({person_ack_unmatched:true});
+    box.querySelector('.pc-abort').onclick=abort;
+    return;
+  }
+
   const items=data.person_match.ambiguous||[];
   const open=items.filter(it=>!it.certain);
   const settled=items.filter(it=>it.certain);
@@ -734,7 +773,9 @@ function renderPersonChoice(data, originalQuestion, provider){
     const opts=(it.choices||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
     return `<div style="margin:6px 0">
       <div class="muted" style="font-size:12px">Who is “${esc(it.mention)}”?</div>
-      <select data-mention="${esc(it.mention)}" style="margin-top:4px;padding:4px 6px">${opts}</select>
+      <select data-mention="${esc(it.mention)}" style="margin-top:4px;padding:4px 6px">${opts}
+        <option value="${KEEP_ORIGINAL}">None of these — keep “${esc(it.mention)}” as written</option>
+      </select>
     </div>`;
   }).join('');
   const known=settled.length
@@ -745,24 +786,18 @@ function renderPersonChoice(data, originalQuestion, provider){
     <div>Please confirm who each name refers to before I run the query:</div>
     ${rows}
     ${known}
-    <button class="pc-go" style="margin-top:8px">Confirm and continue</button>
+    <div style="margin-top:8px">
+      <button class="pc-go">Confirm and continue</button>
+      <button class="pc-abort" style="margin-left:6px">Abort</button>
+    </div>
   </div>`;
   chat.appendChild(box);scroll();
-  box.querySelector('.pc-go').onclick=async()=>{
+  box.querySelector('.pc-go').onclick=()=>{
     const choices={};
     box.querySelectorAll('select[data-mention]').forEach(s=>{choices[s.dataset.mention]=s.value;});
-    box.querySelector('.pc-go').disabled=true;
-    const thinking=document.createElement('div');thinking.className='msg ai';
-    thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
-    try{
-      const r=await api('/api/query',{question:originalQuestion,history:conv.slice(-12),provider,
-        person_match:data.person_match,person_choices:choices});
-      thinking.remove();
-      if(r.needs_person_choice){renderPersonChoice(r,originalQuestion,provider);return;}
-      showResolvedQuestion(r, originalQuestion);
-      addResult(r);
-    }catch(e){thinking.innerHTML=`<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
+    run({person_choices:choices,person_ack_unmatched:true});
   };
+  box.querySelector('.pc-abort').onclick=abort;
 }
 
 function showResolvedQuestion(r, originalQuestion){
