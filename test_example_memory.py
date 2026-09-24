@@ -8,7 +8,11 @@ import unittest
 from pathlib import Path
 
 import export
-from example_memory import ExampleMemory, format_positive_examples
+from example_memory import (
+    ExampleMemory,
+    format_negative_examples,
+    format_positive_examples,
+)
 from result_presentation import validate_presentation_selection
 from ui_results import chart_payload, org_from_rows
 
@@ -50,9 +54,32 @@ class ExampleMemoryTests(unittest.TestCase):
             "MATCH (s:Study) RETURN s.Name LIMIT 5",
             outcome="success",
         )
-        self.memory.record_feedback(case_id, -1)
+        self.memory.record_feedback(
+            case_id,
+            -1,
+            reason="wrong_query",
+            note="Uses the wrong node label",
+        )
         self.assertEqual(self.memory.positive_examples("list studies"), [])
+        found = self.memory.negative_examples("list studies")
+        self.assertEqual(found[0]["feedback_reason"], "wrong_query")
+        self.assertEqual(found[0]["feedback_note"], "Uses the wrong node label")
+        self.assertIn("Do not copy", format_negative_examples(found))
         self.assertEqual(self.memory.stats()["thumbs_down"], 1)
+
+    def test_unknown_case_does_not_report_success(self) -> None:
+        self.assertFalse(self.memory.record_feedback(99999, -1))
+
+    def test_stats_groups_feedback_reasons_by_vote(self) -> None:
+        positive_id = self.memory.add_case("List studies", "MATCH (s:Study) RETURN s")
+        negative_id = self.memory.add_case("List deliveries", "MATCH (d:Delivery) RETURN d")
+        self.memory.record_feedback(positive_id, 1, reason="helpful")
+        self.memory.record_feedback(negative_id, -1, reason="missing_data")
+
+        summary = self.memory.stats()
+
+        self.assertEqual(summary["feedback_reasons"]["positive"], {"helpful": 1})
+        self.assertEqual(summary["feedback_reasons"]["negative"], {"missing_data": 1})
 
 
 class ExportAndOrgTests(unittest.TestCase):

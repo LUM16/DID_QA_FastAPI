@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from app import insight_payload, log_query_timings
+from fastapi import HTTPException
+
+from app import FeedbackBody, feedback, insight_payload, log_query_timings
 
 
 class InsightPayloadTests(unittest.TestCase):
@@ -50,6 +52,21 @@ class InsightPayloadTests(unittest.TestCase):
             2,
             "ok",
         )
+
+    @patch("app.get_memory")
+    def test_positive_feedback_uses_helpful_reason(self, mock_get_memory) -> None:
+        memory = Mock()
+        memory.record_feedback.return_value = True
+        mock_get_memory.return_value = memory
+
+        result = feedback(FeedbackBody(case_id=42, vote=1))
+
+        self.assertEqual(result, {"ok": True, "case_id": 42, "vote": 1, "reason": "helpful"})
+        memory.record_feedback.assert_called_once_with(42, 1, reason="helpful", note="")
+
+    def test_positive_feedback_rejects_negative_reason(self) -> None:
+        with self.assertRaisesRegex(HTTPException, "Positive feedback"):
+            feedback(FeedbackBody(case_id=42, vote=1, reason="wrong_data"))
 
 
 if __name__ == "__main__":

@@ -15,7 +15,6 @@ The matching strategy is pluggable; see MATCH_STRATEGIES at the bottom.
 from __future__ import annotations
 
 import json
-import os
 import re
 from functools import lru_cache
 from typing import Any, Callable
@@ -64,6 +63,83 @@ EXTRACTION_SYSTEM = (
 )
 
 JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
+LATIN_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
+CJK_TEXT = re.compile(r"[\u4e00-\u9fff]")
+COMMA_NAME_HINT = re.compile(r"\b[A-Z][A-Za-z'-]{1,30}\s*,\s*[A-Z][A-Za-z'-]{1,30}\b")
+DID_LIKE = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z0-9][A-Za-z0-9-]*_\d+(?![A-Za-z0-9_])")
+STUDY_LIKE = re.compile(r"\b[A-Z]\d{5,}\b", re.IGNORECASE)
+NON_PERSON_WORDS = {
+    "a",
+    "about",
+    "actual",
+    "adam",
+    "all",
+    "and",
+    "are",
+    "aug",
+    "august",
+    "bar",
+    "be",
+    "by",
+    "chart",
+    "completed",
+    "completion",
+    "count",
+    "csr",
+    "current",
+    "daily",
+    "date",
+    "deliverable",
+    "deliverables",
+    "deliveries",
+    "delivery",
+    "did",
+    "dids",
+    "done",
+    "due",
+    "esub",
+    "for",
+    "graph",
+    "has",
+    "have",
+    "how",
+    "in",
+    "is",
+    "last",
+    "line",
+    "list",
+    "many",
+    "month",
+    "monthly",
+    "next",
+    "of",
+    "ongoing",
+    "open",
+    "planned",
+    "plot",
+    "progress",
+    "remaining",
+    "sda",
+    "sdtm",
+    "show",
+    "status",
+    "std",
+    "study",
+    "task",
+    "tasks",
+    "the",
+    "this",
+    "tlf",
+    "tlfs",
+    "to",
+    "trend",
+    "week",
+    "weekly",
+    "what",
+    "which",
+    "with",
+    "year",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -117,6 +193,22 @@ def extract_person_mentions(
         if mention and mention.lower() in prompt.lower() and mention not in mentions:
             mentions.append(mention)
     return mentions, usage
+
+
+def _can_skip_person_extraction(prompt: str) -> bool:
+    """Return True only for prompts that are clearly non-person English queries."""
+    text = prompt or ""
+    if not text.strip() or CJK_TEXT.search(text) or find_self_references(text):
+        return False
+    if COMMA_NAME_HINT.search(text):
+        return False
+
+    masked = DID_LIKE.sub(" ", text)
+    masked = STUDY_LIKE.sub(" ", masked)
+    words = [word.lower().strip("-'") for word in LATIN_WORD.findall(masked)]
+    if not words:
+        return False
+    return all(word in NON_PERSON_WORDS for word in words)
 
 
 # --------------------------------------------------------------------------- #
@@ -465,6 +557,17 @@ def match_person_in_prompt(
         prompt, ntid_fn=ntid_fn, request=request
     )
 
+    if not self_resolved and not self_unresolved and _can_skip_person_extraction(prompt):
+        return {
+            "prompt": prompt,
+            "status": "no_person",
+            "mentions": [],
+            "resolved": [],
+            "ambiguous": [],
+            "unmatched": [],
+            "usage": usage,
+        }
+
     mentions, extraction_usage = extract_person_mentions(prompt, chat_fn)
     usage = add_usage(usage, extraction_usage)
 
@@ -712,8 +815,4 @@ def get_current_ntid(request: Request | None = None) -> str:
 #         final_prompt = apply_person_choice(final_prompt, item["mention"], item["choices"][0])
 
 #     print(f"\nFinal prompt    : {final_prompt}")
-
-
-    
-
 

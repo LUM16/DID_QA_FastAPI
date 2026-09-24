@@ -357,9 +357,12 @@ class EffortPredictionTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             output_path = Path(directory) / "ongoing.csv"
+            model_path = Path(directory) / "model.joblib"
+            similarity_cache_path = Path(directory) / "similarity-cache.joblib"
+            similarity_cache_path.touch()
             with patch(
                 "effort_prediction._resolve_prediction_artifact",
-                side_effect=lambda path, *_: path,
+                side_effect=[model_path, similarity_cache_path],
             ), patch(
                 "effort_prediction.load_ongoing_assignments",
                 return_value=[{"person": "Person A", "did": "DID-031"}],
@@ -379,7 +382,7 @@ class EffortPredictionTests(unittest.TestCase):
                 "effort_prediction._save_similarity_cache"
             ):
                 result = export_ongoing_predictions(
-                    output_path, Path(directory) / "model.joblib", "2026-01-15"
+                    output_path, model_path, "2026-01-15"
                 )
             with output_path.open(encoding="utf-8-sig", newline="") as output_file:
                 rows = list(csv.DictReader(output_file))

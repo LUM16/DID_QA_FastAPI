@@ -99,12 +99,9 @@ def _read_query(
 ) -> list[dict[str, Any]]:
     load_env()
     driver = get_driver()
-    try:
-        database = os.environ.get("NEO4J_DATABASE", "neo4j")
-        with driver.session(database=database) as session:
-            return session.execute_read(lambda tx: tx.run(query, **(parameters or {})).data())
-    finally:
-        driver.close()
+    database = os.environ.get("NEO4J_DATABASE", "neo4j")
+    with driver.session(database=database) as session:
+        return session.execute_read(lambda tx: tx.run(query, **(parameters or {})).data())
 
 
 def _snapshot_path() -> Path:

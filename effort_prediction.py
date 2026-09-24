@@ -324,14 +324,11 @@ def _json_default(value: Any) -> str:
 def _read_query(query: str, parameters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     load_env()
     driver = get_driver()
-    try:
-        database = __import__("os").environ.get("NEO4J_DATABASE", "neo4j")
-        with driver.session(database=database) as session:
-            return session.execute_read(
-                lambda tx: [record.data() for record in tx.run(query, parameters or {})]
-            )
-    finally:
-        driver.close()
+    database = __import__("os").environ.get("NEO4J_DATABASE", "neo4j")
+    with driver.session(database=database) as session:
+        return session.execute_read(
+            lambda tx: [record.data() for record in tx.run(query, parameters or {})]
+        )
 
 
 def load_training_records() -> list[dict[str, Any]]:

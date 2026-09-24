@@ -58,19 +58,16 @@ def read_prediction_snapshot(path: Path) -> list[dict[str, str]]:
 def _read_completed_actuals(assignments: list[dict[str, str]]) -> list[dict[str, Any]]:
     load_env()
     driver = get_driver()
-    try:
-        database = __import__("os").environ.get("NEO4J_DATABASE", "neo4j")
-        with driver.session(database=database) as session:
-            return [
-                record
-                for record in session.execute_read(
-                    lambda tx: tx.run(
-                        COMPLETED_ACTUALS_QUERY, {"assignments": assignments}
-                    ).data()
-                )
-            ]
-    finally:
-        driver.close()
+    database = __import__("os").environ.get("NEO4J_DATABASE", "neo4j")
+    with driver.session(database=database) as session:
+        return [
+            record
+            for record in session.execute_read(
+                lambda tx: tx.run(
+                    COMPLETED_ACTUALS_QUERY, {"assignments": assignments}
+                ).data()
+            )
+        ]
 
 
 def load_completed_actuals(

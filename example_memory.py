@@ -32,7 +32,11 @@ CREATE TABLE IF NOT EXISTS cases (
     outcome TEXT,
     row_count INTEGER DEFAULT 0,
     feedback INTEGER DEFAULT 0,
-    weight REAL DEFAULT 1.0
+    weight REAL DEFAULT 1.0,
+    feedback_reason TEXT DEFAULT '',
+    feedback_note TEXT DEFAULT '',
+    feedback_at TEXT,
+    review_status TEXT DEFAULT 'pending'
 );
 CREATE INDEX IF NOT EXISTS idx_cases_feedback ON cases(feedback);
 """
@@ -59,7 +63,23 @@ class ExampleMemory:
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        self._migrate_schema()
         self._conn.commit()
+
+    def _migrate_schema(self) -> None:
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(cases)").fetchall()
+        }
+        migrations = {
+            "feedback_reason": "ALTER TABLE cases ADD COLUMN feedback_reason TEXT DEFAULT ''",
+            "feedback_note": "ALTER TABLE cases ADD COLUMN feedback_note TEXT DEFAULT ''",
+            "feedback_at": "ALTER TABLE cases ADD COLUMN feedback_at TEXT",
+            "review_status": "ALTER TABLE cases ADD COLUMN review_status TEXT DEFAULT 'pending'",
+        }
+        for column, statement in migrations.items():
+            if column not in columns:
+                self._conn.execute(statement)
 
     def add_case(
         self,
@@ -84,15 +104,36 @@ class ExampleMemory:
         self._conn.commit()
         return int(cur.lastrowid)
 
-    def record_feedback(self, case_id: int, vote: int) -> bool:
+    def record_feedback(
+        self,
+        case_id: int,
+        vote: int,
+        *,
+        reason: str = "",
+        note: str = "",
+    ) -> bool:
         vote = 1 if vote > 0 else -1
         weight = 2.5 if vote > 0 else 0.0
-        self._conn.execute(
-            "UPDATE cases SET feedback=?, weight=? WHERE id=?",
-            (vote, weight, case_id),
+        feedback_at = _now()[1]
+        cursor = self._conn.execute(
+            """
+            UPDATE cases
+            SET feedback=?, weight=?, feedback_reason=?, feedback_note=?,
+                feedback_at=?, review_status=?
+            WHERE id=?
+            """,
+            (
+                vote,
+                weight,
+                reason.strip(),
+                note.strip(),
+                feedback_at,
+                "not_applicable" if vote > 0 else "pending",
+                case_id,
+            ),
         )
         self._conn.commit()
-        return self._conn.total_changes > 0
+        return cursor.rowcount == 1
 
     def endorse(
         self, question: str, cypher: str, *, row_count: int = 0, case_id: int | None = None
@@ -116,16 +157,19 @@ class ExampleMemory:
             self.record_feedback(new_id, -1)
         return new_id
 
-    def positive_examples(self, question: str, limit: int = 3) -> list[dict[str, Any]]:
-        """Thumbs-up cases ranked against the current question (BM25-style)."""
+    def _ranked_feedback_examples(
+        self, question: str, feedback: int, limit: int
+    ) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             """
             SELECT * FROM cases
-            WHERE feedback > 0 AND weight > 0
+            WHERE feedback = ?
+              AND (feedback < 0 OR weight > 0)
               AND cypher IS NOT NULL AND cypher <> ''
             ORDER BY weight DESC, created_ts DESC
             LIMIT 300
-            """
+            """,
+            (feedback,),
         ).fetchall()
         cases = [dict(r) for r in rows]
         if not cases:
@@ -143,14 +187,38 @@ class ExampleMemory:
             return picked
         return cases[:limit]
 
+    def positive_examples(self, question: str, limit: int = 3) -> list[dict[str, Any]]:
+        """Thumbs-up cases ranked against the current question (BM25-style)."""
+        return self._ranked_feedback_examples(question, 1, limit)
+
+    def negative_examples(self, question: str, limit: int = 2) -> list[dict[str, Any]]:
+        """Thumbs-down cases ranked against the current question."""
+        return self._ranked_feedback_examples(question, -1, limit)
+
     def stats(self) -> dict[str, Any]:
         def scalar(sql: str) -> int:
             return int(self._conn.execute(sql).fetchone()[0] or 0)
+
+        feedback_reasons = {"positive": {}, "negative": {}}
+        rows = self._conn.execute(
+            """
+            SELECT feedback, COALESCE(NULLIF(feedback_reason, ''), 'unspecified') AS reason,
+                   COUNT(*) AS count
+            FROM cases
+            WHERE feedback <> 0
+            GROUP BY feedback, reason
+            ORDER BY feedback DESC, count DESC, reason ASC
+            """
+        ).fetchall()
+        for row in rows:
+            bucket = "positive" if row["feedback"] > 0 else "negative"
+            feedback_reasons[bucket][str(row["reason"])] = int(row["count"])
 
         return {
             "total": scalar("SELECT COUNT(*) FROM cases"),
             "thumbs_up": scalar("SELECT COUNT(*) FROM cases WHERE feedback>0"),
             "thumbs_down": scalar("SELECT COUNT(*) FROM cases WHERE feedback<0"),
+            "feedback_reasons": feedback_reasons,
         }
 
     def close(self) -> None:
@@ -197,6 +265,29 @@ def format_positive_examples(examples: list[dict[str, Any]], max_chars: int = 40
     for ex in examples:
         block = (
             f"\nQ: {ex.get('question', '').strip()}\n```cypher\n{ex.get('cypher', '').strip()}\n```"
+        )
+        if used + len(block) > max_chars:
+            break
+        parts.append(block)
+        used += len(block)
+    return "\n".join(parts) if len(parts) > 1 else ""
+
+
+def format_negative_examples(examples: list[dict[str, Any]], max_chars: int = 2600) -> str:
+    if not examples:
+        return ""
+    parts: list[str] = [
+        "User-rejected examples. Do not copy these Cypher patterns; use them only to avoid repeating mistakes:"
+    ]
+    used = len(parts[0])
+    for ex in examples:
+        reason = ex.get("feedback_reason") or "unspecified"
+        note = ex.get("feedback_note") or ""
+        block = (
+            f"\nQ: {ex.get('question', '').strip()}\n"
+            f"Reason: {reason}\n"
+            f"Note: {note}\n"
+            f"```cypher\n{ex.get('cypher', '').strip()}\n```"
         )
         if used + len(block) > max_chars:
             break

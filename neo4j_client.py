@@ -59,6 +59,12 @@ _TITLE_KEYS = ("Name", "name", "DID", "Title", "Email", "NTID", "Milestone", "Ca
 MAX_EXPORT_ROWS = 20000
 _LAST_META: dict[str, Any] = {}
 _SCHEMA_CACHE: dict[str, Any] | None = None
+_DRIVER_CACHE: dict[str, Any] = {
+    "driver": None,
+    "uri": None,
+    "user": None,
+    "password": None,
+}
 
 
 def load_env() -> None:
@@ -86,7 +92,28 @@ def get_driver():
     password = os.environ.get("NEO4J_PASSWORD")
     if not password:
         raise ValueError("NEO4J_PASSWORD is not set (use Connect Vars or .env).")
-    return GraphDatabase.driver(uri, auth=(user, password))
+    cached = _DRIVER_CACHE.get("driver")
+    if (
+        cached is not None
+        and _DRIVER_CACHE.get("uri") == uri
+        and _DRIVER_CACHE.get("user") == user
+        and _DRIVER_CACHE.get("password") == password
+    ):
+        return cached
+
+    close_driver()
+    driver = GraphDatabase.driver(uri, auth=(user, password))
+    _DRIVER_CACHE.update(
+        {"driver": driver, "uri": uri, "user": user, "password": password}
+    )
+    return driver
+
+
+def close_driver() -> None:
+    driver = _DRIVER_CACHE.get("driver")
+    if driver is not None:
+        driver.close()
+    _DRIVER_CACHE.update({"driver": None, "uri": None, "user": None, "password": None})
 
 
 def expand_legacy_task_properties(query: str) -> str:
@@ -235,29 +262,27 @@ def run_cypher_with_meta(query: str, max_rows: int = 200) -> dict[str, Any]:
     """Run read-only Cypher and return rows plus a reconstructed relationship graph."""
     global _LAST_META
     safe = ensure_read_only(query)
+    load_env()
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
     driver = get_driver()
-    try:
-        with driver.session(database=database) as session:
-            result = session.run(safe)
-            keys = list(result.keys())
-            builder = _GraphBuilder()
-            rows: list[dict[str, Any]] = []
-            for i, record in enumerate(result):
-                if i >= max_rows:
-                    break
-                rows.append({key: builder.serialize(record[key]) for key in keys})
-            meta = {
-                "rows": rows,
-                "columns": keys,
-                "graph": builder.to_dict(),
-                "row_count": len(rows),
-                "cypher": safe,
-            }
-            _LAST_META = meta
-            return meta
-    finally:
-        driver.close()
+    with driver.session(database=database) as session:
+        result = session.run(safe)
+        keys = list(result.keys())
+        builder = _GraphBuilder()
+        rows: list[dict[str, Any]] = []
+        for i, record in enumerate(result):
+            if i >= max_rows:
+                break
+            rows.append({key: builder.serialize(record[key]) for key in keys})
+        meta = {
+            "rows": rows,
+            "columns": keys,
+            "graph": builder.to_dict(),
+            "row_count": len(rows),
+            "cypher": safe,
+        }
+        _LAST_META = meta
+        return meta
 
 
 def last_query_meta() -> dict[str, Any]:
@@ -275,44 +300,41 @@ def get_schema(*, force: bool = False, include_counts: bool = False) -> dict[str
     load_env()
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
     driver = get_driver()
-    try:
-        with driver.session(database=database) as session:
-            labels = [
-                row["label"]
-                for row in session.run("CALL db.labels() YIELD label RETURN label ORDER BY label")
-            ]
-            rel_types = [
-                row["relationshipType"]
-                for row in session.run(
-                    "CALL db.relationshipTypes() YIELD relationshipType "
-                    "RETURN relationshipType ORDER BY relationshipType"
-                )
-            ]
-            props = [
-                row["propertyKey"]
-                for row in session.run(
-                    "CALL db.propertyKeys() YIELD propertyKey "
-                    "RETURN propertyKey ORDER BY propertyKey"
-                )
-            ]
-            counts: dict[str, Any] = {}
-            if include_counts:
-                for label in labels[:20]:
-                    counts[label] = session.run(
-                        f"MATCH (n:`{label}`) RETURN count(n) AS c"
-                    ).single()["c"]
+    with driver.session(database=database) as session:
+        labels = [
+            row["label"]
+            for row in session.run("CALL db.labels() YIELD label RETURN label ORDER BY label")
+        ]
+        rel_types = [
+            row["relationshipType"]
+            for row in session.run(
+                "CALL db.relationshipTypes() YIELD relationshipType "
+                "RETURN relationshipType ORDER BY relationshipType"
+            )
+        ]
+        props = [
+            row["propertyKey"]
+            for row in session.run(
+                "CALL db.propertyKeys() YIELD propertyKey "
+                "RETURN propertyKey ORDER BY propertyKey"
+            )
+        ]
+        counts: dict[str, Any] = {}
+        if include_counts:
+            for label in labels[:20]:
+                counts[label] = session.run(
+                    f"MATCH (n:`{label}`) RETURN count(n) AS c"
+                ).single()["c"]
 
-            payload = {
-                "labels": labels,
-                "relationshipTypes": rel_types,
-                "propertyKeys": props[:100],
-                "nodeCountsByLabel": counts,
-            }
-            if not include_counts:
-                _SCHEMA_CACHE = payload
-            return payload
-    finally:
-        driver.close()
+        payload = {
+            "labels": labels,
+            "relationshipTypes": rel_types,
+            "propertyKeys": props[:100],
+            "nodeCountsByLabel": counts,
+        }
+        if not include_counts:
+            _SCHEMA_CACHE = payload
+        return payload
 
 
 def clear_schema_cache() -> None:

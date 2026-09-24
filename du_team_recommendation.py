@@ -92,12 +92,9 @@ def _resolve_recommendation_cache_path(cache_path: Path) -> Path:
 def _read_query(query: str) -> list[dict[str, Any]]:
     load_env()
     driver = get_driver()
-    try:
-        database = os.environ.get("NEO4J_DATABASE", "neo4j")
-        with driver.session(database=database) as session:
-            return session.execute_read(lambda tx: tx.run(query).data())
-    finally:
-        driver.close()
+    database = os.environ.get("NEO4J_DATABASE", "neo4j")
+    with driver.session(database=database) as session:
+        return session.execute_read(lambda tx: tx.run(query).data())
 
 
 def _history_snapshot_path() -> Path:

@@ -6,8 +6,9 @@ import io
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -20,6 +21,7 @@ from example_memory import get_memory
 from match_person import apply_person_choices, match_person_in_prompt
 from export import to_csv, to_json
 from neo4j_client import (
+    close_driver,
     connection_summary,
     ensure_read_only,
     get_driver,
@@ -47,7 +49,17 @@ TIMING_STAGE_ORDER = (
     "total",
 )
 
-app = FastAPI(title="DID Insight", version="2.0.0")
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    app_instance.state.neo4j_driver_managed = True
+    try:
+        yield
+    finally:
+        close_driver()
+
+
+app = FastAPI(title="DID Insight", version="2.0.0", lifespan=lifespan)
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -68,8 +80,9 @@ class QueryBody(BaseModel):
 
 class FeedbackBody(BaseModel):
     case_id: int
-    vote: int
-    note: str = ""
+    vote: Literal[-1, 1]
+    reason: str = "other"
+    note: str = Field(default="", max_length=1000)
 
 
 class ImproveBody(BaseModel):
@@ -206,10 +219,7 @@ def neo4j_health() -> dict[str, Any]:
     uri = os.environ.get("NEO4J_URI", connection_summary())
     try:
         driver = get_driver()
-        try:
-            driver.verify_connectivity()
-        finally:
-            driver.close()
+        driver.verify_connectivity()
         return {"ok": True, "uri": uri, "error": None}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "uri": uri, "error": str(exc)}
@@ -324,11 +334,39 @@ def query(body: QueryBody, request: Request) -> dict[str, Any]:
 
 @app.post("/api/feedback")
 def feedback(body: FeedbackBody) -> dict[str, Any]:
+    negative_reasons = {
+        "wrong_query",
+        "wrong_data",
+        "missing_data",
+        "wrong_person",
+        "wrong_format",
+        "other",
+    }
+    reason = body.reason.strip().lower() or "other"
+    if body.vote > 0 and reason == "other":
+        reason = "helpful"
+    if body.vote > 0 and reason != "helpful":
+        raise HTTPException(
+            status_code=400,
+            detail="Positive feedback must use the helpful reason",
+        )
+    if body.vote < 0 and reason not in negative_reasons:
+        raise HTTPException(status_code=400, detail="Unsupported feedback reason")
     memory = get_memory()
-    ok = memory.record_feedback(body.case_id, body.vote)
+    ok = memory.record_feedback(
+        body.case_id,
+        body.vote,
+        reason=reason,
+        note=body.note,
+    )
     if not ok:
         raise HTTPException(status_code=404, detail="Unknown case_id")
-    return {"ok": True, "case_id": body.case_id, "vote": 1 if body.vote > 0 else -1}
+    return {
+        "ok": True,
+        "case_id": body.case_id,
+        "vote": body.vote,
+        "reason": reason,
+    }
 
 
 @app.post("/api/improve")

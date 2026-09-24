@@ -18,6 +18,12 @@ from neo4j_client import load_env
 log = logging.getLogger(__name__)
 
 _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
+_client_cache: dict[str, Any] = {
+    "client": None,
+    "model": None,
+    "base": None,
+    "token": None,
+}
 
 
 def empty_usage() -> dict[str, int]:
@@ -238,14 +244,33 @@ def build_llm_client() -> tuple[OpenAI, str]:
     if _vox_configured():
         token = get_vox_access_token()
         base = _require_http_url("VOX_GENAI_API")
-        client = OpenAI(api_key=token, base_url=f"{base}/v1")
         model = _env("VOX_MODEL") or "gpt-4o"
+        cached = _client_cache.get("client")
+        if (
+            cached is not None
+            and _client_cache.get("token") == token
+            and _client_cache.get("base") == base
+            and _client_cache.get("model") == model
+        ):
+            return cached, model
+        client = OpenAI(api_key=token, base_url=f"{base}/v1")
+        _client_cache.update(
+            {"client": client, "model": model, "base": base, "token": token}
+        )
         return client, model
 
     raise ValueError(
         "Missing Vox GenAI config. Set VOX_GENAI_API, VOX_TOKEN_GEN_URL, "
         "VOX_CLIENT_ID, and VOX_CLIENT_SECRET in Connect Vars or .env."
     )
+
+
+def clear_llm_client_cache() -> None:
+    client = _client_cache.get("client")
+    close = getattr(client, "close", None)
+    if callable(close):
+        close()
+    _client_cache.update({"client": None, "model": None, "base": None, "token": None})
 
 
 def models_vox_genai() -> list[str]:

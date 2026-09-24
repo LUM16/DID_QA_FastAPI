@@ -75,6 +75,12 @@
   .pane{display:none}.pane.active{display:block}
   .fb{margin-top:8px;display:flex;gap:8px;align-items:center}
   .fb button{padding:3px 10px;font-size:12px}
+  .fb button.selected{border-color:var(--accent);color:var(--text);background:var(--panel2)}
+  .fb-detail{width:100%;margin-top:4px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+  .fb-reasons{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+  .fb-reasons button{font-size:11px}
+  .fb-note{display:block;width:100%;min-height:58px;resize:vertical;margin:6px 0;padding:6px 8px;
+           color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;font:inherit}
   canvas{background:var(--canvas-bg);border:1px solid var(--line);border-radius:8px;max-width:100%}
   .composer{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(transparent,var(--bg) 30%);
             padding:16px 0 18px}
@@ -325,14 +331,16 @@ function addResult(r){
     ${attempts?`<details><summary>🧪 Execution &amp; self-correction</summary><div class="inner">${attempts}</div></details>`:''}
     <div class="result-tabs" data-id="${r.case_id||''}"></div>
     <div class="fb">
-      <span class="muted">Was this helpful?</span>
-      <button class="up">👍 Yes</button><button class="down">👎 No (used for learning)</button>
+      <span class="muted">Was this helpful? Your feedback improves similar future queries.</span>
+      <button class="up" type="button" aria-pressed="false">👍 Yes</button>
+      <button class="down" type="button" aria-pressed="false">👎 No</button>
+      <div class="fb-detail" hidden></div>
     </div>
   </div>`;
   chat.appendChild(d);
   renderTabs(d.querySelector('.result-tabs'), r);
-  d.querySelector('.up').onclick=()=>sendFeedback(r.case_id,1,d);
-  d.querySelector('.down').onclick=()=>sendFeedback(r.case_id,-1,d);
+  d.querySelector('.up').onclick=()=>sendFeedback(r.case_id,1,d,'helpful');
+  d.querySelector('.down').onclick=()=>showNegativeFeedback(r.case_id,d);
   scroll();
 }
 
@@ -714,9 +722,53 @@ async function api(path,body){const opt=body?{method:'POST',headers:{'Content-Ty
   const res=await fetch(apiUrl(path),opt);if(!res.ok){let m=path;try{const err=await res.json();m=err.detail||err.message||res.statusText; if(Array.isArray(m)) m=m.map(x=>x.msg||JSON.stringify(x)).join('; ');}catch(e){m=res.statusText;}throw new Error(m);}
   return path.includes('export')?res:res.json();}
 
-async function sendFeedback(id,vote,el){if(!id){toast('This answer has no recordable case');return;}
-  try{await api('/api/feedback',{case_id:id,vote});toast(vote>0?'Saved 👍 — this case is kept as a positive example':'Saved 👎 — it will be distilled into improved rules');
-    el.querySelector('.up').disabled=vote>0;el.querySelector('.down').disabled=vote<0;}catch(e){toast('Feedback failed: '+e.message);}}
+function setFeedbackState(el,vote){
+  const up=el.querySelector('.up'),down=el.querySelector('.down');
+  up.classList.toggle('selected',vote>0); down.classList.toggle('selected',vote<0);
+  up.setAttribute('aria-pressed',String(vote>0)); down.setAttribute('aria-pressed',String(vote<0));
+}
+
+function showNegativeFeedback(id,el){
+  if(!id){toast('This answer has no recordable case');return;}
+  const detail=el.querySelector('.fb-detail');
+  detail.hidden=false;
+  detail.innerHTML=`<div class="muted">What needs improvement?</div>
+    <div class="fb-reasons">
+      <button type="button" data-reason="wrong_query">Query logic</button>
+      <button type="button" data-reason="wrong_data">Data is incorrect</button>
+      <button type="button" data-reason="missing_data">Data is missing</button>
+      <button type="button" data-reason="wrong_person">Wrong person</button>
+      <button type="button" data-reason="wrong_format">Presentation</button>
+      <button type="button" data-reason="other">Other</button>
+    </div>
+    <textarea class="fb-note" maxlength="1000" placeholder="Optional: describe the expected answer or correction"></textarea>
+    <button type="button" class="fb-submit" disabled>Submit feedback</button>
+    <button type="button" class="fb-cancel">Cancel</button>`;
+  let reason='';
+  detail.querySelectorAll('[data-reason]').forEach(button=>button.onclick=()=>{
+    reason=button.dataset.reason;
+    detail.querySelectorAll('[data-reason]').forEach(item=>item.classList.toggle('selected',item===button));
+    detail.querySelector('.fb-submit').disabled=false;
+  });
+  detail.querySelector('.fb-submit').onclick=()=>sendFeedback(
+    id,-1,el,reason,detail.querySelector('.fb-note').value
+  );
+  detail.querySelector('.fb-cancel').onclick=()=>{detail.hidden=true;detail.innerHTML='';};
+}
+
+async function sendFeedback(id,vote,el,reason,note=''){
+  if(!id){toast('This answer has no recordable case');return;}
+  const controls=el.querySelectorAll('button'); controls.forEach(button=>button.disabled=true);
+  try{
+    await api('/api/feedback',{case_id:id,vote,reason,note});
+    setFeedbackState(el,vote);
+    const detail=el.querySelector('.fb-detail'); detail.hidden=true;detail.innerHTML='';
+    toast(vote>0
+      ?'Saved 👍 — this query pattern can help answer similar questions.'
+      :'Saved 👎 — the reason will help avoid this mistake in similar questions.');
+  }catch(e){toast('Feedback failed: '+e.message);}
+  finally{controls.forEach(button=>button.disabled=false);}
+}
 
 async function download(cypher,fmt){if(!cypher){toast('No query available to export');return;}
   const res=await api('/api/export',{cypher,format:fmt});const blob=await res.blob();

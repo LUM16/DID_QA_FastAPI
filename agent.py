@@ -12,7 +12,11 @@ from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from effort_prediction import person_name_candidates, predict_effort
-from example_memory import format_positive_examples, get_memory
+from example_memory import (
+    format_negative_examples,
+    format_positive_examples,
+    get_memory,
+)
 from neo4j_client import (
     expand_legacy_task_properties,
     get_schema,
@@ -20,6 +24,15 @@ from neo4j_client import (
     load_env,
     run_cypher,
 )
+DID_IDENTIFIER_RE = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Za-z0-9][A-Za-z0-9-]*_\d+)(?![A-Za-z0-9_])"
+)
+STUDY_IDENTIFIER_RE = re.compile(r"\b([A-Z]\d{5,})\b", re.IGNORECASE)
+STATUS_QUERY_RE = re.compile(r"\bstatus\b|状态", re.IGNORECASE)
+DATE_QUERY_RE = re.compile(r"\b(?:planned|actual|date)\b|日期|计划|实际", re.IGNORECASE)
+COMPLETED_QUERY_RE = re.compile(r"\bcompleted?\b|已完成|完成", re.IGNORECASE)
+COUNT_QUERY_RE = re.compile(r"\b(?:how many|count|number of)\b|多少|数量", re.IGNORECASE)
+NEXT_MONTH_RE = re.compile(r"\bnext month\b|下个月", re.IGNORECASE)
 from result_presentation import select_result_presentation, table_from_rows
 from vox_client import add_usage, chat as _chat, empty_usage
 
@@ -173,6 +186,7 @@ class AgentState(TypedDict, total=False):
     visualization: dict[str, Any] | None
     presentation_warning: str | None
     timings_ms: dict[str, int]
+    generated_locally: bool
 
 
 def _elapsed_ms(started: float) -> int:
@@ -690,10 +704,13 @@ def _build_domain_context(question: str) -> str:
     selected = _select_examples(question)
     try:
         endorsed = format_positive_examples(get_memory().positive_examples(question, limit=3))
+        rejected = format_negative_examples(get_memory().negative_examples(question, limit=2))
     except Exception:  # noqa: BLE001 - example memory must not break Cypher generation
-        endorsed = ""
+        endorsed, rejected = "", ""
     if endorsed:
         parts.extend(["", endorsed])
+    if rejected:
+        parts.extend(["", rejected])
 
     for filename in selected:
         example_path = EXAMPLES_ROOT / filename
@@ -724,6 +741,64 @@ def _history_for_prompt(history: list[dict[str, Any]]) -> str:
         for message in history[-HISTORY_MAX_MESSAGES:]
         if message.get("role") and message.get("content")
     )
+
+
+def _quote(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _first_did(question: str) -> str | None:
+    match = DID_IDENTIFIER_RE.search(question or "")
+    return match.group(1) if match else None
+
+
+def _first_study(question: str) -> str | None:
+    match = STUDY_IDENTIFIER_RE.search(question or "")
+    return match.group(1).upper() if match else None
+
+
+def template_cypher(question: str) -> str | None:
+    """Return deterministic Cypher for high-frequency simple queries."""
+    did = _first_did(question)
+    if did and STATUS_QUERY_RE.search(question):
+        value = _quote(did)
+        return f"""MATCH (d:Delivery)
+WHERE d.Name = {value} OR d.DID = {value}
+RETURN d.Name AS DID, d.DID_Status AS Status
+LIMIT 1"""
+    if did and DATE_QUERY_RE.search(question):
+        value = _quote(did)
+        return f"""MATCH (d:Delivery)
+WHERE d.Name = {value} OR d.DID = {value}
+RETURN d.Name AS DID,
+       d.DID_Status AS Status,
+       d.Planned_Delivery_Date AS Planned_Delivery_Date,
+       d.Actual_Delivery_Date AS Actual_Delivery_Date
+LIMIT 1"""
+
+    study = _first_study(question)
+    if study and DELIVERY_QUESTION_RE.search(question):
+        status_filter = "WHERE d.DID_Status = 'Completed'\n" if COMPLETED_QUERY_RE.search(question) else ""
+        return f"""MATCH (s:Study {{Name: {_quote(study)}}})-[:HAS_DELIVERY]->(d:Delivery)
+{status_filter}RETURN d.Name AS Delivery,
+       d.DID AS DID,
+       d.DID_Status AS Status,
+       d.Deliverable_Detail AS Deliverable_Detail,
+       d.Reporting_Detail AS Reporting_Detail,
+       d.Actual_Delivery_Date AS Actual_Delivery_Date,
+       d.Planned_Delivery_Date AS Planned_Delivery_Date
+ORDER BY coalesce(d.Actual_Delivery_Date, d.Planned_Delivery_Date) DESC
+LIMIT 50"""
+
+    if COUNT_QUERY_RE.search(question) and DELIVERY_QUESTION_RE.search(question) and NEXT_MONTH_RE.search(question):
+        return """WITH date() AS today
+WITH date({year: today.year, month: today.month, day: 1}) + duration({months: 1}) AS startDate
+WITH startDate, startDate + duration({months: 1}) AS endDate
+MATCH (d:Delivery)
+WHERE d.Planned_Delivery_Date >= startDate
+  AND d.Planned_Delivery_Date < endDate
+RETURN count(DISTINCT d) AS Delivery_Count"""
+    return None
 
 
 def generate_cypher(
@@ -941,6 +1016,31 @@ def _add_state_usage(state: AgentState, extra_usage: dict[str, int]) -> dict[str
 
 def _prepare(state: AgentState) -> AgentState:
     started = time.perf_counter()
+    if state.get("generated_locally") and state.get("cypher"):
+        return {
+            "schema": state.get("schema") or {},
+            "domain_context": "",
+            "cypher": state["cypher"],
+            "generated_locally": True,
+            "usage": state.get("usage", empty_usage()),
+            "timings_ms": _add_timing(state, "prepare", started),
+            "repair_attempts": 0,
+            "error": None,
+        }
+
+    local_cypher = template_cypher(state["question"])
+    if local_cypher:
+        return {
+            "schema": state.get("schema") or {},
+            "domain_context": "",
+            "cypher": local_cypher,
+            "generated_locally": True,
+            "usage": state.get("usage", empty_usage()),
+            "timings_ms": _add_timing(state, "prepare", started),
+            "repair_attempts": 0,
+            "error": None,
+        }
+
     schema = state.get("schema") or get_schema()
     return {
         "schema": schema,
@@ -953,6 +1053,15 @@ def _prepare(state: AgentState) -> AgentState:
 
 
 def _generate(state: AgentState) -> AgentState:
+    if state.get("generated_locally") and state.get("cypher"):
+        return {
+            "cypher": state["cypher"],
+            "usage": state.get("usage", empty_usage()),
+            "timings_ms": dict(state.get("timings_ms", {})),
+            "error": None,
+            "generated_locally": True,
+        }
+
     started = time.perf_counter()
     cypher, usage = generate_cypher(
         state["question"],
@@ -965,6 +1074,7 @@ def _generate(state: AgentState) -> AgentState:
         "usage": _add_state_usage(state, usage),
         "timings_ms": _add_timing(state, "cypher_generation", started),
         "error": None,
+        "generated_locally": False,
     }
 
 
@@ -1003,6 +1113,51 @@ def _empty_answer(question: str) -> str:
     if re.search(r"[\u4e00-\u9fff]", question):
         return "未找到匹配的数据。请检查研究/交付标识符或筛选条件。"
     return "No matching data was found. Please check the study or delivery identifier and filters."
+
+
+def _format_local_answer(question: str, rows: list[dict[str, Any]]) -> str | None:
+    if not rows:
+        return _empty_answer(question)
+    chinese = bool(re.search(r"[\u4e00-\u9fff]", question))
+    fields = list(dict.fromkeys(key for row in rows for key in row))
+    first = rows[0]
+
+    if len(rows) == 1 and set(fields) <= {"DID", "Status"}:
+        did = first.get("DID") or "DID"
+        status = first.get("Status") or "Unknown"
+        return (
+            f"{did} 的状态是 **{status}**。"
+            if chinese
+            else f"{did} status is **{status}**."
+        )
+
+    if len(rows) == 1 and "Delivery_Count" in first:
+        count = int(first.get("Delivery_Count") or 0)
+        return (
+            f"匹配到 **{count}** 个 delivery。"
+            if chinese
+            else f"Found **{count}** matching deliveries."
+        )
+
+    if len(rows) == 1 and {"DID", "Planned_Delivery_Date", "Actual_Delivery_Date"} <= set(fields):
+        did = first.get("DID") or "DID"
+        planned = first.get("Planned_Delivery_Date") or "N/A"
+        actual = first.get("Actual_Delivery_Date") or "N/A"
+        status = first.get("Status") or "Unknown"
+        return (
+            f"{did} 当前状态为 **{status}**；计划交付日期：**{planned}**；实际交付日期：**{actual}**。"
+            if chinese
+            else f"{did} status is **{status}**; planned delivery date: **{planned}**; actual delivery date: **{actual}**."
+        )
+
+    if {"Delivery", "Status"} <= set(fields):
+        count = len(rows)
+        return (
+            f"匹配到 **{count}** 个 delivery，明细见下方表格。"
+            if chinese
+            else f"Found **{count}** matching deliveries. See the table below for details."
+        )
+    return None
 
 
 def _answer(state: AgentState) -> AgentState:
@@ -1046,7 +1201,11 @@ def _answer(state: AgentState) -> AgentState:
         "visualization": visualization,
         "presentation_warning": presentation_warning,
     }
-    if visualization is not None and not visualization["summary_required"] and not _wants_delivery_breakdown(
+    local_answer = _format_local_answer(state["question"], rows) if state.get("generated_locally") else None
+    if local_answer is not None:
+        answer = local_answer
+        answer_usage = empty_usage()
+    elif visualization is not None and not visualization["summary_required"] and not _wants_delivery_breakdown(
         state["question"]
     ):
         answer = ""
@@ -1203,7 +1362,11 @@ def ask(
     """Route predictions directly and execute standard queries through LangGraph."""
     load_env()
     started = time.perf_counter()
-    is_prediction, intent_usage = classify_effort_prediction_intent(question, history)
+    local_cypher = template_cypher(question)
+    if local_cypher:
+        is_prediction, intent_usage = False, empty_usage()
+    else:
+        is_prediction, intent_usage = classify_effort_prediction_intent(question, history)
     timings = {"intent": _elapsed_ms(started)}
     if is_prediction:
         try:
@@ -1237,6 +1400,8 @@ def ask(
             "schema": schema or {},
             "usage": intent_usage,
             "timings_ms": timings,
+            "cypher": local_cypher or "",
+            "generated_locally": bool(local_cypher),
         }
     )
     rows = result.get("rows", [])
