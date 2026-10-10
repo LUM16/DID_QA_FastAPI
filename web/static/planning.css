@@ -6,7 +6,7 @@ body.sb .planning-tabs{margin-left:250px}
 .planning-form{display:grid;gap:14px}
 .planning-form label{display:grid;gap:6px;font-size:14px}
 .planning-form input,.planning-form select{box-sizing:border-box;width:100%;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit}
-.planning-form select{min-height:130px}
+.planning-form select[size]{min-height:130px}
 .planning-form option{padding:5px}
 .planning-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .planning-status{color:var(--muted);white-space:pre-wrap}

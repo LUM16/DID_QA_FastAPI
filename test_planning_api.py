@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 import effort_prediction as prediction
 from app import app
@@ -46,6 +46,58 @@ class PlanningAPITests(unittest.TestCase):
         self.assertEqual(primary.name, "TLF.csv")
         self.assertIn(b"Table", primary.getvalue())
         self.assertIsNone(data)
+
+    def test_recommendation_workflows_accept_tlf_only_csv_and_workbook_without_llm(self):
+        book = Workbook()
+        book.active.title = "TLF"
+        book.active.append(["Title", "Type", "Source Datasets"])
+        book.active.append(["AE Summary", "Table", "ADAE"])
+        workbook = io.BytesIO()
+        book.save(workbook)
+        book.close()
+        history = [{"organization_mappings": [{"ta_lead": "Shen, Henry", "group_lead": "G"}]}]
+        with patch("du_team_recommendation.load_history_snapshot", return_value=(history, [], {})), \
+             patch("du_team_recommendation.recommend_teams", return_value={"recommendations": []}) as rank, \
+             patch("vox_client.chat", side_effect=AssertionError("Unexpected LLM call")), \
+             patch("du_team_recommendation._read_query", side_effect=AssertionError("Unexpected Neo4j query")):
+            for route in ["/api/planning/recommend", "/api/planning/jobs/recommend"]:
+                for filename, content in [
+                    ("TLF.csv", b"Title,Type,Source Datasets\nAE Summary,Table,ADAE\n"),
+                    ("scope.xlsx", workbook.getvalue()),
+                ]:
+                    with self.subTest(route=route, filename=filename):
+                        response = self.client.post(route, data={"ta_lead_name": "Shen, Henry"},
+                                                    files={"primary_file": (filename, content)})
+                        self.assertEqual(response.status_code, 202 if "/jobs/" in route else 200)
+                        if "/jobs/" in route:
+                            self.assertEqual(self.client.get(
+                                f"/api/planning/jobs/{response.json()['job_id']}"
+                            ).json()["status"], "complete")
+                        self.assertEqual(rank.call_args.args[0]["tlfs"][0]["name"], "AE Summary")
+                        self.assertEqual(rank.call_args.args[0]["sdtms"], [])
+
+    def test_recommendation_contract_has_no_data_upload_field(self):
+        schema = app.openapi()
+        for route in ["/api/planning/recommend", "/api/planning/jobs/recommend"]:
+            body = schema["paths"][route]["post"]["requestBody"]["content"]["multipart/form-data"]["schema"]
+            properties = schema["components"]["schemas"][body["$ref"].split("/")[-1]]["properties"]
+            self.assertEqual(set(properties), {"ta_lead_name", "primary_file"})
+
+    def test_csv_allocation_still_requires_data(self):
+        with patch("tlf_person_allocation.load_person_tlf_snapshot",
+                   return_value=([{"team_lead_name": "Exact, Lead"}], [], {})), \
+             patch("vox_client.chat", side_effect=AssertionError("Unexpected LLM call")):
+            for route in ["/api/planning/allocate", "/api/planning/jobs/allocate"]:
+                response = self.client.post(route, data={"team_lead_name": "Exact, Lead"},
+                                            files={"primary_file": ("TLF.csv", b"Title\nA\n")})
+                if "/jobs/" in route:
+                    response = self.client.get(f"/api/planning/jobs/{response.json()['job_id']}")
+                    self.assertEqual(response.json()["error_status"], 422)
+                    message = response.json()["error"]
+                else:
+                    self.assertEqual(response.status_code, 422)
+                    message = response.json()["detail"]
+                self.assertIn("both TLF CSV and Data CSV", message)
 
     @patch("planning_api.allocate_uploaded_tlfs")
     def test_xlsx_and_paired_csv_allocation_routes(self, allocate):

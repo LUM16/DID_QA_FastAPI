@@ -187,8 +187,15 @@ Results include primary/backup scores, workload, evidence, warnings and Excel do
 It never queries Neo4j at UI runtime. See [TLF person allocation](docs/tlf_person_allocation.md)
 for snapshot schema, exact snapshot Team Lead validation, scoring, and balancing.
 
-Upload either an `.xlsx` workbook with `TLF` and `Data` sheets or a TLF CSV plus
-Data CSV. Recommendation only requires TLF; Data is required for allocation.
+Recommendation uses a normal single-select TA Lead dropdown with an explicit
+placeholder and the two snapshot-backed Henry/Priya names. Upload an `.xlsx`
+workbook with a `TLF` sheet or a TLF CSV; no separate Data CSV is used.
+Allocation keeps the searchable Team Lead list. Upload an `.xlsx` workbook with
+`TLF` and `Data` sheets, or a TLF CSV plus required Data CSV. The Data CSV chooser
+appears only after selecting a TLF CSV and is cleared/hidden on workbook selection
+or Reset; workbooks use their embedded Data sheet.
+Data columns `SDTM/ADaM` and `Domain/Dataset Name` identify dataset/domain names
+for allocation source/domain grouping, not ADaM/SDTM recommendation scoring.
 Use **Download example workbook** to obtain `docs/C5001001_61.xlsx`.
 Each upload is limited to 20 MB. Changing selections/files or pressing Reset
 clears stale results; a running request shows elapsed progress and clear errors.
@@ -200,8 +207,8 @@ Planning API (all paths retain existing Q&A endpoints):
 | `GET /api/planning/recommend/options` | Snapshot-backed Henry/Priya names |
 | `GET /api/planning/allocate/options` | Complete snapshot Team Lead list |
 | `GET /api/planning/example` | Example workbook |
-| `POST /api/planning/recommend` | Multipart `ta_lead_name`, `primary_file`, optional `data_csv_file` |
-| `POST /api/planning/allocate` | Multipart `team_lead_name`, `primary_file`, optional `data_csv_file` |
+| `POST /api/planning/recommend` | Multipart `ta_lead_name`, `primary_file` (TLF only) |
+| `POST /api/planning/allocate` | Multipart `team_lead_name`, `primary_file`, `data_csv_file` required for TLF CSV; workbook uses its Data sheet |
 | `POST /api/planning/allocate/excel` | JSON `{"result": <allocation response>}` → Excel |
 | `POST /api/planning/jobs/recommend` / `jobs/allocate` | Same multipart inputs → 202 + `job_id` |
 | `GET /api/planning/jobs/{job_id}` | Queued/running/completed/error state, elapsed time and result |

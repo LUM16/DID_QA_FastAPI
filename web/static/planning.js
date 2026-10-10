@@ -140,14 +140,19 @@
     const example = make('a', 'Download example workbook'); example.href = 'api/planning/example'; card.append(example);
     const form = make('form', undefined, 'planning-form');
     const leadLabel = mode === 'recommend' ? 'TA Lead' : 'Team Lead';
-    const label = make('label', `${leadLabel} — search and select a complete name`);
+    const label = make('label', mode === 'recommend' ? 'TA Lead name' : `${leadLabel} — search and select a complete name`);
     const search = make('input'); search.type = 'search'; search.placeholder = `Search ${leadLabel} names…`; search.setAttribute('aria-label', `Search ${leadLabel}`);
-    const select = make('select'); select.size = 5; select.required = true; select.setAttribute('aria-label', leadLabel);
-    label.append(search, select); form.append(label);
+    const select = make('select'); select.required = true; select.setAttribute('aria-label', leadLabel);
+    if (mode === 'allocate') { select.size = 5; label.append(search); }
+    label.append(select); form.append(label);
     const primaryLabel = make('label', mode === 'recommend' ? 'TLF workbook (.xlsx) or TLF CSV' : 'Workbook with TLF + Data sheets, or TLF CSV');
     const primary = make('input'); primary.type = 'file'; primary.accept = '.xlsx,.csv'; primary.required = true; primaryLabel.append(primary); form.append(primaryLabel);
-    const dataLabel = make('label', 'Data CSV (required for CSV allocation; optional for recommendation)');
-    const data = make('input'); data.type = 'file'; data.accept = '.csv'; dataLabel.append(data); form.append(dataLabel);
+    const dataLabel = make('label', 'Data CSV (required with TLF CSV)');
+    const data = make('input'); data.type = 'file'; data.accept = '.csv'; dataLabel.append(data);
+    if (mode === 'allocate') {
+      dataLabel.hidden = true; form.append(dataLabel);
+      note(form, 'Workbooks use the embedded Data sheet. For CSV allocation, Data CSV columns SDTM/ADaM and Domain/Dataset Name identify source/domain groups.');
+    }
     const actions = make('div', undefined, 'planning-actions'), submit = make('button', mode === 'recommend' ? 'Recommend Team' : 'Allocate TLF People', 'primary');
     submit.type = 'submit'; submit.disabled = true;
     const reset = make('button', 'Reset'); reset.type = 'button';
@@ -164,23 +169,33 @@
     function filter() {
       const previous = select.value;
       select.replaceChildren();
-      state.names.filter(n => n.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).forEach(n => {
+      if (mode === 'recommend') {
+        const placeholder = make('option', 'Select a TA Lead name…'); placeholder.value = ''; placeholder.disabled = true;
+        select.append(placeholder);
+      }
+      state.names.filter(n => mode === 'recommend' || n.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).forEach(n => {
         const option = make('option', n); option.value = n; select.append(option);
       });
       select.value = previous;
-      if (!select.value) select.selectedIndex = -1;
+      if (!select.value) select.selectedIndex = mode === 'recommend' ? 0 : -1;
       invalidate();
     }
     state.filter = filter;
     search.oninput = filter;
     select.onchange = invalidate;
-    primary.onchange = () => { if (!primary.files[0]?.name.toLowerCase().endsWith('.csv')) data.value = ''; invalidate(); };
+    function syncData() {
+      const needsData = mode === 'allocate' && !!primary.files[0]?.name.toLowerCase().endsWith('.csv');
+      dataLabel.hidden = !needsData; data.required = needsData; data.disabled = !needsData;
+      if (!needsData) data.value = '';
+    }
+    syncData();
+    primary.onchange = () => { syncData(); invalidate(); };
     data.onchange = invalidate;
-    reset.onclick = () => { form.reset(); search.value = ''; select.selectedIndex = -1; filter(); };
+    reset.onclick = () => { form.reset(); search.value = ''; select.value = ''; syncData(); filter(); };
     form.onsubmit = async event => {
       event.preventDefault(); invalidate();
       if (!state.names.includes(select.value)) { status.textContent = 'Select a complete name from the snapshot list.'; return; }
-      const file = primary.files[0], dataFile = data.files[0];
+      const file = primary.files[0], dataFile = data.disabled ? undefined : data.files[0];
       if (!file) { status.textContent = 'Select an input file.'; return; }
       if (mode === 'allocate' && file.name.toLowerCase().endsWith('.csv') && !dataFile) {
         status.textContent = 'CSV allocation requires both TLF CSV and Data CSV.'; return;

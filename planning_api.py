@@ -47,7 +47,7 @@ def _input(upload: UploadFile | None, *, data: bool = False) -> io.BytesIO | Non
     filename = Path(upload.filename or "").name
     suffix = Path(filename).suffix.lower()
     if suffix not in ({".csv"} if data else {".csv", ".xlsx"}):
-        raise HTTPException(422, "Upload an .xlsx workbook or TLF CSV with Data CSV.")
+        raise HTTPException(422, "Upload a Data CSV (.csv)." if data else "Upload a TLF workbook (.xlsx) or TLF CSV (.csv).")
     content = upload.file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Each uploaded file must be at most 20 MB.")
@@ -96,9 +96,8 @@ def example() -> FileResponse:
 def recommend(
     ta_lead_name: str = Form(...),
     primary_file: UploadFile = File(...),
-    data_csv_file: UploadFile | None = File(None),
 ) -> dict[str, Any]:
-    return _run(recommend_uploaded_scope, ta_lead_name, _input(primary_file), _input(data_csv_file, data=True))
+    return _run(recommend_uploaded_scope, ta_lead_name, _input(primary_file), None)
 
 
 @router.post("/allocate")
@@ -153,9 +152,8 @@ def recommendation_job(
     background: BackgroundTasks,
     ta_lead_name: str = Form(...),
     primary_file: UploadFile = File(...),
-    data_csv_file: UploadFile | None = File(None),
 ) -> dict[str, str]:
-    return _new_job(background, recommend_uploaded_scope, ta_lead_name, _input(primary_file), _input(data_csv_file, data=True))
+    return _new_job(background, recommend_uploaded_scope, ta_lead_name, _input(primary_file), None)
 
 
 @router.post("/jobs/allocate", status_code=202)

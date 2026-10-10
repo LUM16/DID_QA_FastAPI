@@ -147,7 +147,9 @@ class TlfPersonAllocationTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["team_match"], {"team_lead_name": "Team A"})
             script = client.get("/static/planning.js").text
-            self.assertIn("select.selectedIndex = -1", script)
+            self.assertIn("select.selectedIndex = mode === 'recommend' ? 0 : -1", script)
+            self.assertIn("if (mode === 'allocate') { select.size = 5; label.append(search); }", script)
+            self.assertIn("data.required = needsData; data.disabled = !needsData", script)
             self.assertNotIn("datalist", script)
             self.assertNotIn("DU", script)
         llm.assert_not_called()

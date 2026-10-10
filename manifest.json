@@ -44,7 +44,7 @@
       "checksum": "3c13df10fd50c289c819e666aec130dc"
     },
     "README.md": {
-      "checksum": "c7d0c5c39102acd7444405771befd6ea"
+      "checksum": "2b14f501f4eefb20303165497aacd525"
     },
     "agent.py": {
       "checksum": "75fb9926e0fc0ff200b7a37803580ee5"
@@ -152,7 +152,7 @@
       "checksum": "1ef50b0935b1e89e0f077193bb5b73f5"
     },
     "planning_api.py": {
-      "checksum": "63ce69c8d88de0810753fbe296bc89e7"
+      "checksum": "9144b22b89a5effc3f065aea4cb9d320"
     },
     "result_presentation.py": {
       "checksum": "d055e91532e9446b94a56ab11f47754a"
@@ -170,7 +170,7 @@
       "checksum": "38d647f000b6978959b93e6f8cdf2c67"
     },
     "test_du_team_recommendation.py": {
-      "checksum": "2b29efadf8a112437d316722e1e9847b"
+      "checksum": "d184cced2578efda0929c38e4616a80a"
     },
     "test_effort_prediction.py": {
       "checksum": "688feb1e5644500b709e5e7cc8339829"
@@ -182,7 +182,7 @@
       "checksum": "a834d53cdacad4cf4fee1d5be1de986c"
     },
     "test_planning_api.py": {
-      "checksum": "19efcac57e282cf6b62732d4bab3e07f"
+      "checksum": "b73c0ea6dd1009bb98c5398f51faae50"
     },
     "test_published_artifacts.py": {
       "checksum": "ba0c26d9fedaa884adb42c64dca9f7de"
@@ -191,7 +191,7 @@
       "checksum": "efe5de3eb79039515371d86ec0d97828"
     },
     "test_tlf_person_allocation.py": {
-      "checksum": "3c7bb4dd5cdd4b1c229e9b11f550e8e7"
+      "checksum": "00852fcc2e0f6045fc801db094bd8db3"
     },
     "test_validate_effort_predictions.py": {
       "checksum": "4c5a54646df75474938286e94286fa13"
@@ -215,10 +215,10 @@
       "checksum": "97f7d3c3f8c2ee57c266a070ad444464"
     },
     "web/static/planning.css": {
-      "checksum": "beaec15744b56e926bf9cc2653238859"
+      "checksum": "b1acbc2796c42d7eefc1b435f0878183"
     },
     "web/static/planning.js": {
-      "checksum": "b26a5683922f5a5f38092d1777818f48"
+      "checksum": "7e22f62c17e6249f6e57930a35ed4e5e"
     }
   }
 }

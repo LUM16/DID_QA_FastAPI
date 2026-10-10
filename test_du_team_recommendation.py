@@ -426,6 +426,10 @@ class TeamRecommendationTests(unittest.TestCase):
                 )
                 self.assertIsNone(result["group_lead_name"])
             script = client.get("/static/planning.js").text
+            self.assertIn("Select a TA Lead name…", script)
+            self.assertIn("placeholder.value = ''; placeholder.disabled = true", script)
+            self.assertIn("mode === 'recommend' ? 'TA Lead name'", script)
+            self.assertNotIn("optional for recommendation", script)
             self.assertNotIn("Group Lead name", script)
             self.assertNotIn("DU", script)
 
