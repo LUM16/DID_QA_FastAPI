@@ -45,6 +45,9 @@ total hands-on hours for a person assigned to a planned or ongoing DID.
 Detailed technical documentation: [Chinese](docs/effort_prediction.md) | [English](docs/effort_prediction_en.md).
 For a Chinese v1-to-v3 reporting summary, see [model evolution](docs/effort_prediction_model_evolution.md).
 
+The published model is bundled and ready to use; do not retrain or refresh
+production artifacts to deploy this migration. The following commands are for
+an explicit future, offline model-development workflow, not deployment.
 Install dependencies, then export completed DID history:
 
 ```cmd
@@ -55,7 +58,7 @@ Review the printed data-quality report before training. Train with a grouped
 time split (70% train, 15% interval calibration, 15% test):
 
 ```cmd
-py effort_prediction.py train --input data\did_effort_training.json --model artifacts\did_effort_model.joblib --cache artifacts\did_effort_similarity_cache.joblib
+py effort_prediction.py train --input data\did_effort_training.json --model data\new_did_effort_model.joblib --cache data\new_did_effort_similarity_cache.joblib
 ```
 
 The training command reports MAE, median absolute error, RMSE, WAPE, bias, and
@@ -110,7 +113,8 @@ Use `--visualization path\to\dashboard.html` to select another dashboard path.
 
 Use `--as-of-date YYYY-MM-DD` for a historical/current-state forecast. Only
 completed records strictly before that date contribute to personal efficiency
-and similarity features. Generated exports and model artifacts are gitignored.
+and similarity features. Generated exports are gitignored; the four published
+model/cache/snapshot files under `artifacts` are explicitly tracked with Git LFS.
 
 ### Natural-language Agent integration
 
@@ -146,25 +150,26 @@ Prediction requests continue with their separate LLM-first parameter extraction,
 Neo4j validation, and V3 model calculation. Python computes P50/P80/P90; the
 LLM does not calculate or alter prediction values.
 
-### DU Team recommendation
+### Recommend Team
 
-The **Recommend DU Team** and **Allocate TLF People** pipelines remain available
-as Python modules (`du_team_recommendation.py`, `tlf_person_allocation.py`).
-The published RSC UI matches DID Insight2 (chat + org/graph/chart/table).
+**Recommend Team** and **Allocate TLF People** are integrated into the existing
+DID Insight2 FastAPI UI alongside **Ask Neo4j**. Chat, identity disambiguation,
+feedback, org/graph/chart/table and existing exports are unchanged.
 
 Python ranks current `Person.Team_Lead_Name` groups using a manually refreshed local
-snapshot of completed-DID scope evidence and active workload. Refresh it after
-each Neo4j update:
-
-```cmd
-py du_team_recommendation.py refresh-history
-```
+published v4 snapshot of completed-DID scope evidence and active workload.
+The searchable TA Lead selection is restricted to snapshot-backed **Shen, Henry**
+and **Iyer, Priya Venkatesan**; there is no Group selector. All eligible teams
+across the selected TA's current groups are compared, using 37/18/10/35 weights
+and the selected eligible teams' maximum workload as denominator. The top three
+include total candidate count, group metadata, actual Generation/QC-owned
+historical TLF coverage evidence and similar completed DIDs.
 
 The UI never queries Neo4j during a recommendation; it reads this snapshot and
 the shared `did_effort_similarity_cache.joblib`. Recommendations are decision
 support only; review the displayed snapshot time, scope gaps, and similar
 historical DIDs before assigning work. Set `DU_TEAM_HISTORY_SNAPSHOT_PATH` to
-use a persistent writable snapshot location in RSC. When using the default
+use another explicit snapshot location in RSC. When using the default
 Git-tracked snapshot, RSC automatically downloads its full Git LFS content on
 first use. `DU_TEAM_HISTORY_SNAPSHOT_URL` can override its download URL.
 See the full [DU Team recommendation metric definition](docs/du_team_recommendation.md).
@@ -172,15 +177,41 @@ See the full [DU Team recommendation metric definition](docs/du_team_recommendat
 ### TLF-only person allocation
 
 The **Allocate TLF People** tab uses the same Excel/CSV upload format but only
-its TLF rows, and recommends distinct Generation/QC primaries plus backups from
-a separate manually refreshed Person × TLF evidence snapshot:
-
-```cmd
-py tlf_person_allocation.py refresh-snapshot
-```
+its TLF rows and Data-derived grouping, and recommends distinct Generation/QC
+primaries plus backups from the published Person × TLF evidence snapshot. Select
+an exact complete Team Lead name from the searchable, unrestricted snapshot list.
+There is no LLM matching. Group constraints, flagged same-person fallback,
+role evidence, workload and run-local balancing match the source implementation.
+Results include primary/backup scores, workload, evidence, warnings and Excel download.
 
 It never queries Neo4j at UI runtime. See [TLF person allocation](docs/tlf_person_allocation.md)
-for snapshot schema, strict LLM Team Lead validation, scoring, and balancing.
+for snapshot schema, exact snapshot Team Lead validation, scoring, and balancing.
+
+Upload either an `.xlsx` workbook with `TLF` and `Data` sheets or a TLF CSV plus
+Data CSV. Recommendation only requires TLF; Data is required for allocation.
+Use **Download example workbook** to obtain `docs/C5001001_61.xlsx`.
+Each upload is limited to 20 MB. Changing selections/files or pressing Reset
+clears stale results; a running request shows elapsed progress and clear errors.
+
+Planning API (all paths retain existing Q&A endpoints):
+
+| Method / path | Purpose |
+|---|---|
+| `GET /api/planning/recommend/options` | Snapshot-backed Henry/Priya names |
+| `GET /api/planning/allocate/options` | Complete snapshot Team Lead list |
+| `GET /api/planning/example` | Example workbook |
+| `POST /api/planning/recommend` | Multipart `ta_lead_name`, `primary_file`, optional `data_csv_file` |
+| `POST /api/planning/allocate` | Multipart `team_lead_name`, `primary_file`, optional `data_csv_file` |
+| `POST /api/planning/allocate/excel` | JSON `{"result": <allocation response>}` → Excel |
+| `POST /api/planning/jobs/recommend` / `jobs/allocate` | Same multipart inputs → 202 + `job_id` |
+| `GET /api/planning/jobs/{job_id}` | Queued/running/completed/error state, elapsed time and result |
+
+The UI uses short upload + polling requests rather than keeping a long HTTP
+request open: cold, large-workbook comparisons can take minutes with the exact
+source business logic. Results are memory-only, expire after one hour, and the
+queue is bounded to eight runs. Reset discards the UI state, not already-running
+server work. Server restarts expire runs; deployments with multiple workers need
+sticky routing to the same worker (or use the direct synchronous APIs).
 
 The presentation layer labels only unambiguous returned fields: `hours`,
 `recorded_hours`, and `time_on_hours` mean recorded `TIME_ON` hours;
@@ -192,8 +223,27 @@ fields.
 The v3 model and similarity cache are tracked in GitHub with Git LFS. Git-backed
 RSC deployments may receive only their small LFS pointer files. On the first
 prediction request, the app detects that condition and downloads both artifacts
-from this repository's `main` branch to a writable local cache. Later requests
+from **this FastAPI repository's pinned `published-artifacts-26af6b5` tag**
+to a writable local cache. Missing default files use the same fallback; missing
+custom paths fail explicitly. Downloaded bytes are verified against published
+SHA-256/size provenance. Later requests
 reuse the cached copies within that RSC runtime.
+
+Exactly four source LFS artifacts were migrated from
+[`26af6b5`](https://github.com/LUM16/DID_QA/commit/26af6b5b8ebf5c106da582dca7bc4c33eb9a258d),
+without retraining or Neo4j refresh. Historical effort data is **embedded in the
+model** (32,705 historical rows), not a fifth missing file. The shared similarity
+cache contains 355,638 pairs; team v4 has 15,663 history rows; person allocation
+v1 has 1,049,456 history rows. Exact OIDs, sizes and provenance are recorded in
+[`artifacts/provenance.json`](artifacts/provenance.json).
+Scikit-learn is pinned to **1.9.1**, matching the saved pipeline.
+
+Published artifacts are never mutated at request time. Similarity additions
+are written to a separate `.artifact-cache/published-artifacts-26af6b5` copy
+(or `DID_EFFORT_ARTIFACT_CACHE_DIR`), excluded from Git/deployment. Cache writes
+and initial download/copy use atomic, unique staged files; planning calls are
+serialized to protect shared in-memory business indexes. Neo4j's shared driver
+is only closed by FastAPI lifespan shutdown.
 
 The default artifact URLs work for this repository. These optional RSC Vars can
 override them or configure a private repository:
@@ -201,7 +251,25 @@ override them or configure a private repository:
 - `DID_EFFORT_MODEL_URL`
 - `DID_EFFORT_SIMILARITY_CACHE_URL`
 - `DID_EFFORT_ARTIFACT_CACHE_DIR`
+- `DU_TEAM_HISTORY_SNAPSHOT_URL`
+- `TLF_PERSON_ALLOCATION_SNAPSHOT_URL`
 - `GITHUB_TOKEN` (only when the artifact URLs require authentication)
+
+Configure URL overrides only for the same verified published bytes. On Connect,
+ensure a writable artifact-cache directory, trusted HTTPS access to GitHub media,
+adequate memory for the million-row allocation snapshot, and Python ≥3.11 with
+the pinned dependencies. First-use downloads total approximately 599 MiB when
+all four LFS objects are needed. Repository publication does not itself deploy or
+configure the existing Connect instance.
+
+### Regression validation
+
+```powershell
+python -m unittest test_planning_api test_app test_agent_templates test_agent_prediction test_neo4j_client test_vox_client test_effort_prediction test_du_team_recommendation test_tlf_person_allocation test_result_presentation test_example_memory test_validate_effort_predictions
+# Optional, after git lfs pull; this never calls Neo4j/LLM or retrains:
+$env:DID_RUN_ARTIFACT_SMOKE = "1"
+python -m unittest test_published_artifacts
+```
 
 Person input is matched against Neo4j names without requiring exact punctuation
 or name order. A unique parenthesized alias is also accepted, such as `Riven`

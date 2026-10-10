@@ -15,9 +15,11 @@ from tlf_person_allocation import (
     _grouped_targets,
     allocation_excel_bytes,
     allocate_tlf_people,
+    allocate_uploaded_tlfs,
     load_person_tlf_snapshot,
     refresh_person_tlf_snapshot,
     resolve_team_lead_name,
+    team_lead_candidates,
 )
 
 
@@ -65,16 +67,90 @@ class TlfPersonAllocationTests(unittest.TestCase):
             self.assertEqual(_resolve_snapshot_path(DEFAULT_TLF_PERSON_SNAPSHOT_PATH), resolved)
 
     def test_team_resolver_accepts_only_actual_candidate(self) -> None:
-        good = resolve_team_lead_name(
-            "team a", ["Team A"],
-            chat_fn=lambda *_args, **_kwargs: ('{"team_lead_name":"Team A"}', {}),
-        )
+        good = resolve_team_lead_name("Team A", ["Team A"])
         self.assertEqual(good["team_lead_name"], "Team A")
-        with self.assertRaisesRegex(ValueError, "exact Team_Lead_Name"):
-            resolve_team_lead_name(
-                "team a", ["Team A"],
-                chat_fn=lambda *_args, **_kwargs: ('{"team_lead_name":"Invented Team"}', {}),
+        for name in ["team a", "Team", "Invented Team", ""]:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "exact Team_Lead_Name"):
+                    resolve_team_lead_name(name, ["Team A"])
+        with self.assertRaisesRegex(ValueError, "no Team_Lead_Name"):
+            resolve_team_lead_name("Team A", [])
+
+    def test_candidates_are_unique_sorted_snapshot_names(self) -> None:
+        self.assertEqual(
+            team_lead_candidates([
+                {"team_lead_name": "Team B"},
+                {"team_lead_name": "Team A"},
+                {"team_lead_name": "Team A"}, {"team_lead_name": ""},
+            ]),
+            ["Team A", "Team B"],
+        )
+
+    def test_uploaded_allocation_uses_no_llm_or_database_calls(self) -> None:
+        rows = [evidence("Gen", "generation", "D1"), evidence("QC", "qc", "D2")]
+        upload = BytesIO(
+            b"Title,Type,Source Datasets\nAE Summary,T,ADAE\n"
+        )
+        upload.name = "scope.csv"
+        data_upload = BytesIO(
+            b"SDTM/ADaM,Domain/Dataset Name\nADaM,ADAE\n"
+        )
+        data_upload.name = "data.csv"
+        with (
+            patch("tlf_person_allocation.load_person_tlf_snapshot",
+                  return_value=(rows, [], {"generated_at": "test"})),
+            patch("tlf_person_allocation._resolve_recommendation_cache_path",
+                  return_value=self.workspace / "upload-cache.joblib"),
+            patch("vox_client.chat", side_effect=AssertionError("LLM called")) as llm,
+            patch("tlf_person_allocation._read_query",
+                  side_effect=AssertionError("Neo4j queried")) as query,
+        ):
+            result = allocate_uploaded_tlfs("Team A", upload, data_upload)
+            with self.assertRaisesRegex(ValueError, "exact Team_Lead_Name"):
+                allocate_uploaded_tlfs("Unknown", upload)
+        self.assertEqual(result["team_match"], {"team_lead_name": "Team A"})
+        self.assertEqual(result["allocations"][0]["generation"]["primary"]["person"], "Gen")
+        self.assertEqual(result["allocations"][0]["qc"]["primary"]["person"], "QC")
+        llm.assert_not_called()
+        query.assert_not_called()
+
+    def test_allocation_ui_requires_explicit_searchable_team_selection(self) -> None:
+        from fastapi.testclient import TestClient
+        from app import app
+
+        rows = [
+            evidence("Gen", "generation", "D1"),
+            evidence("QC", "qc", "D2"),
+            {**evidence("Other", "generation", "D3"), "team_lead_name": "Team B"},
+        ]
+        with (
+            patch("tlf_person_allocation.load_person_tlf_snapshot",
+                  return_value=(rows, [], {"generated_at": "test", "history_row_count": 3})),
+            patch("tlf_person_allocation._resolve_recommendation_cache_path",
+                  return_value=self.workspace / "ui-cache.joblib"),
+            patch("planning_api.load_person_tlf_snapshot",
+                  return_value=(rows, [], {"generated_at": "test", "history_row_count": 3})),
+            patch("vox_client.chat", side_effect=AssertionError("LLM called")) as llm,
+        ):
+            client = TestClient(app)
+            self.assertEqual(
+                client.get("/api/planning/allocate/options").json()["team_leads"],
+                ["Team A", "Team B"],
             )
+            files = {
+                "primary_file": ("scope.csv", b"Title,Type,Source Datasets\nAE Summary,T,ADAE\n", "text/csv"),
+                "data_csv_file": ("data.csv", b"SDTM/ADaM,Domain/Dataset Name\nADaM,ADAE\n", "text/csv"),
+            }
+            invalid = client.post("/api/planning/allocate", data={"team_lead_name": "Partial"}, files=files)
+            self.assertEqual(invalid.status_code, 422)
+            response = client.post("/api/planning/allocate", data={"team_lead_name": "Team A"}, files=files)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["team_match"], {"team_lead_name": "Team A"})
+            script = client.get("/static/planning.js").text
+            self.assertIn("select.selectedIndex = -1", script)
+            self.assertNotIn("datalist", script)
+            self.assertNotIn("DU", script)
+        llm.assert_not_called()
 
     def test_distinct_primaries_and_two_backups(self) -> None:
         rows = [

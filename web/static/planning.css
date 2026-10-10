@@ -1,0 +1,21 @@
+[hidden]{display:none!important}
+.planning-tabs{max-width:1040px;margin:0 auto;padding:14px 18px 0;display:flex;gap:8px;flex-wrap:wrap}
+body.sb .planning-tabs{margin-left:250px}
+.planning-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.planning-card h2,.planning-card h3{margin-top:0}
+.planning-form{display:grid;gap:14px}
+.planning-form label{display:grid;gap:6px;font-size:14px}
+.planning-form input,.planning-form select{box-sizing:border-box;width:100%;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit}
+.planning-form select{min-height:130px}
+.planning-form option{padding:5px}
+.planning-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.planning-status{color:var(--muted);white-space:pre-wrap}
+.planning-error{color:var(--bad,#ef8b8b)}
+.planning-warning{border-left:3px solid #d8ab55;padding:10px;background:var(--panel2)}
+.planning-table{overflow:auto;margin:12px 0}
+.planning-table table{width:100%;border-collapse:collapse;font-size:13px}
+.planning-table td,.planning-table th{padding:8px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.planning-score{height:8px;border-radius:5px;background:var(--panel2);margin:8px 0 14px}
+.planning-score span{display:block;height:100%;background:var(--accent);border-radius:5px}
+.planning-note{color:var(--muted);font-size:13px}
+@media(max-width:700px){.planning-tabs{padding:10px}.planning-card{padding:12px}}

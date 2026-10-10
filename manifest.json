@@ -20,34 +20,73 @@
   },
   "files": {
     "requirements.txt": {
-      "checksum": "708a2885a4097dfc9fc35df66272197d"
+      "checksum": "c52b952b308400ae3500a2e28909897f"
     },
     ".env.example": {
       "checksum": "b41e3e0ef95c696e1677f739ffd082a3"
+    },
+    ".gitattributes": {
+      "checksum": "8d067b18fca8bf92cc1e4ea577c98fa6"
     },
     ".github/agents/did-neo4j-qa.agent.md": {
       "checksum": "19f2297ac932cb85685639d98b017b2c"
     },
     ".gitignore": {
-      "checksum": "fcaf0cd22d80f46b881d6d8afaceb503"
+      "checksum": "215fd55e0c0e2be77023e09ef727a339"
     },
     ".python-version": {
       "checksum": "9685208dd0aa86cd4c849e6291c5bce2"
     },
     ".rscignore": {
-      "checksum": "e8ab67d8d905fff239766d0931c08d01"
+      "checksum": "f2f5dc58a2d3f98ab031bb8d850a49e2"
     },
     "GITHUB_DEPLOY.md": {
-      "checksum": "e6fdb99f8e4faa38729dbf5a3c167331"
+      "checksum": "3c13df10fd50c289c819e666aec130dc"
     },
     "README.md": {
-      "checksum": "6901bba47fc94bb0e5d3efe294c79f51"
+      "checksum": "c7d0c5c39102acd7444405771befd6ea"
     },
     "agent.py": {
-      "checksum": "8ae16f42f02b001a58104f4cb60548f4"
+      "checksum": "75fb9926e0fc0ff200b7a37803580ee5"
     },
     "app.py": {
-      "checksum": "cef8442170c7b4d96183521b2f53d3af"
+      "checksum": "645a3c4f247d7e1ff9b06d1883f46fb0"
+    },
+    "artifacts/did_effort_model.joblib": {
+      "checksum": "3a383ec23bde9be8b8de9d57fe3b90bb"
+    },
+    "artifacts/did_effort_similarity_cache.joblib": {
+      "checksum": "1beed71610269929fa63f8386e840363"
+    },
+    "artifacts/du_team_history_snapshot.joblib": {
+      "checksum": "51d79f273a158fc4f9896c5789dd7fe2"
+    },
+    "artifacts/provenance.json": {
+      "checksum": "d072de5cede99770b1dd6dff81664589"
+    },
+    "artifacts/tlf_person_allocation_snapshot.joblib": {
+      "checksum": "c0b0a8966f5741844947cbf8056b9c9c"
+    },
+    "docs/C5001001_61.xlsx": {
+      "checksum": "a7b21d8fcbaa7bbb67957110abcf16c2"
+    },
+    "docs/app_demo_questions.md": {
+      "checksum": "a4e1a59399d2691a63fdf9f949dbc955"
+    },
+    "docs/du_recommendation_and_tlf_allocation_overview.md": {
+      "checksum": "afbcb62ab39e653640afae7c10b1679b"
+    },
+    "docs/du_team_recommendation.md": {
+      "checksum": "04d6f43257e3d1cfc35a330e8d33724d"
+    },
+    "docs/effort_prediction.md": {
+      "checksum": "a3dd8779ae53bcdb92a328ed8b767cd6"
+    },
+    "docs/effort_prediction_en.md": {
+      "checksum": "80e9a14df90870610d323b3f9e4c8af7"
+    },
+    "docs/effort_prediction_model_evolution.md": {
+      "checksum": "a78dc27bf35068f6759c31a92b8a9fee"
     },
     "docs/examples/lot_tlf_sdtm_adam.md": {
       "checksum": "a172266966f13840b7e68538a3e98170"
@@ -76,26 +115,44 @@
     "docs/examples/workload_planning.md": {
       "checksum": "f971b1f9676371f84d0c0df986253e0a"
     },
+    "docs/post_query_presentation.md": {
+      "checksum": "0346c4e5156bd1ceff1584cdc4d25bf1"
+    },
+    "docs/prediction_validation.md": {
+      "checksum": "1b63e58348ef54160476d232f0bd3f43"
+    },
     "docs/schema.md": {
       "checksum": "ddb8022e3442cc61045190e1c47236ac"
     },
     "docs/skill.md": {
       "checksum": "bc9c0435de1ce3380209c8ba2a1d22dd"
     },
+    "docs/tlf_person_allocation.md": {
+      "checksum": "15c39d3c6072fddf8e2f5672c5a734b5"
+    },
+    "docs/update_kf.md": {
+      "checksum": "0955bc1306b7bcdaaf47d65df268ab18"
+    },
     "du_team_recommendation.py": {
-      "checksum": "a1b83f199e434d828f77ddf18b20a4b3"
+      "checksum": "1a60acda42687e1595afef91fb82db82"
     },
     "effort_prediction.py": {
-      "checksum": "f92bfd814b40241b83e225a83deb2749"
+      "checksum": "62797ebb3cee4c3a0bd8f09a4f16e472"
     },
     "example_memory.py": {
-      "checksum": "c827462e57ce2b94be36c969eaac4de6"
+      "checksum": "2dd02a517b73095e3b34a343ff3bf116"
     },
     "export.py": {
       "checksum": "0b301c8f4966b61922928262a80e5b07"
     },
+    "match_person.py": {
+      "checksum": "2067932d99745b3dc02d4e2387bd23f4"
+    },
     "neo4j_client.py": {
-      "checksum": "3e415f49893dcf5b0aa3c4a81438af7f"
+      "checksum": "1ef50b0935b1e89e0f077193bb5b73f5"
+    },
+    "planning_api.py": {
+      "checksum": "63ce69c8d88de0810753fbe296bc89e7"
     },
     "result_presentation.py": {
       "checksum": "d055e91532e9446b94a56ab11f47754a"
@@ -103,14 +160,65 @@
     "start-local.bat": {
       "checksum": "e5e0e566c72608f98a73af9b7c769da0"
     },
+    "test_agent_prediction.py": {
+      "checksum": "9bd098e0f84958641948158b08532c06"
+    },
+    "test_agent_templates.py": {
+      "checksum": "ef24e7bb94c973a40a429072bc0999db"
+    },
+    "test_app.py": {
+      "checksum": "38d647f000b6978959b93e6f8cdf2c67"
+    },
+    "test_du_team_recommendation.py": {
+      "checksum": "2b29efadf8a112437d316722e1e9847b"
+    },
+    "test_effort_prediction.py": {
+      "checksum": "688feb1e5644500b709e5e7cc8339829"
+    },
+    "test_example_memory.py": {
+      "checksum": "0d682c3a2bcfea4ef78a2aacaa98e928"
+    },
+    "test_neo4j_client.py": {
+      "checksum": "a834d53cdacad4cf4fee1d5be1de986c"
+    },
+    "test_planning_api.py": {
+      "checksum": "19efcac57e282cf6b62732d4bab3e07f"
+    },
+    "test_published_artifacts.py": {
+      "checksum": "ba0c26d9fedaa884adb42c64dca9f7de"
+    },
+    "test_result_presentation.py": {
+      "checksum": "efe5de3eb79039515371d86ec0d97828"
+    },
+    "test_tlf_person_allocation.py": {
+      "checksum": "3c7bb4dd5cdd4b1c229e9b11f550e8e7"
+    },
+    "test_validate_effort_predictions.py": {
+      "checksum": "4c5a54646df75474938286e94286fa13"
+    },
+    "test_vox_client.py": {
+      "checksum": "a2a88d556237ee02c6c86824f66a26ed"
+    },
     "tlf_person_allocation.py": {
-      "checksum": "e8086550d36447fd6dfe6632732d830e"
+      "checksum": "f29b972f26616fac64f3a68a2e94ec3b"
+    },
+    "ui_results.py": {
+      "checksum": "a75929a41bb18801780c821a008ae65b"
+    },
+    "validate_effort_predictions.py": {
+      "checksum": "5e4be64c6b085990276fac85e528c7b2"
     },
     "vox_client.py": {
-      "checksum": "5a5f7d182c70d46ec02034ba0e9394de"
+      "checksum": "62790c7148197fb2fd525e171bd7b219"
     },
     "web/static/index.html": {
-      "checksum": "d792fd5c6d5aeb0bc428cf127e51cca7"
+      "checksum": "97f7d3c3f8c2ee57c266a070ad444464"
+    },
+    "web/static/planning.css": {
+      "checksum": "beaec15744b56e926bf9cc2653238859"
+    },
+    "web/static/planning.js": {
+      "checksum": "b26a5683922f5a5f38092d1777818f48"
     }
   }
 }

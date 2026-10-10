@@ -15,6 +15,9 @@
 | `manifest.json` | **关键。** Connect 靠它识别这是 FastAPI 应用，并安装依赖 |
 | `app.py` | FastAPI 入口（`app:app`），提供 Insight2 UI 与 `/api/*` |
 | `web/static/index.html` | DID Insight2 单页聊天界面 |
+| `web/static/planning.js` / `planning.css` | Recommend Team / Allocate TLF People，沿用原有主题 |
+| `planning_api.py` / `match_person.py` | 规划上传 API / 原有人名消歧 |
+| `artifacts/*.joblib` / `provenance.json` | 四个原始 LFS 产物及 SHA-256 来源校验 |
 | `agent.py` | 自然语言 → Cypher → 回答 |
 | `neo4j_client.py` | Neo4j 只读查询 |
 | `vox_client.py` | Vox GenAI OAuth + 对话 |
@@ -198,25 +201,34 @@ Connect 用 `manifest.json` 里的文件清单和 checksum 来打包。下面情
 
 ```powershell
 cd "C:\Users\lum16\Documents\Neo4j\DID Agent\rsc-app"
-$rs = "C:\Program Files\Python311\Scripts\rsconnect.exe"
-
-# 在不含 .env / .posit 的干净副本上生成，避免把密钥写进清单
-$tmp = Join-Path $env:TEMP "rsc-app-manifest"
-if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
-New-Item -ItemType Directory -Path $tmp | Out-Null
-Copy-Item app.py,agent.py,neo4j_client.py,vox_client.py,requirements.txt,README.md,GITHUB_DEPLOY.md,.rscignore,.gitignore,.env.example,.python-version $tmp
-& $rs write-manifest fastapi --entrypoint app:app --overwrite $tmp
-Copy-Item (Join-Path $tmp "manifest.json") .\manifest.json -Force
+# 在无密钥的独立 Git checkout 中执行；保留完整源码、静态资源和 artifacts
+python -c "from rsconnect.main import cli; cli.main(args=['write-manifest','fastapi','--entrypoint','app:app','--overwrite','--exclude','.git/**','--exclude','.venv/**','--exclude','.artifact-cache/**','--exclude','.test-work/**','--exclude','data/**','--exclude','*.db','--exclude','*.sqlite*','.'])"
 ```
 
 然后把更新后的 `manifest.json` 一并 commit / push。
+此仓库以 `.gitattributes` 固定文本 LF；请在 LF checkout 生成 checksum，
+避免 Windows CRLF 与 Connect 的 Git checkout 字节不一致。上面的调用把
+排除模式直接传给 Click，避免 Windows 原生命令展开 `*`。
 
 ---
 
 ## 7. 限制（Git-backed）
 
 - Git-backed 内容 **不能**再用 RStudio / Posit Publisher / `rsconnect deploy` 去覆盖同一条内容。
-- 不支持 Git LFS。
+- Connect Git 导入通常仅拿到 LFS pointer。应用识别默认文件的 pointer 或缺失，
+  从 **DID_QA_FastAPI** 自身固定 tag `published-artifacts-26af6b5` 下载完整字节，
+  并按 `artifacts/provenance.json` 校验 SHA-256/大小，不依赖源仓库浮动 main。
+  若 Git 导入对 LFS pointer checksum 报错，请在独立干净 checkout 执行
+  `git lfs pull` 后发布新的 Connect 内容，或由管理员配置完整产物打包。
+  原有 Git-backed 内容不可用 Publisher 强行覆盖。
+- 构建需要 Python ≥3.11 / scikit-learn **1.9.1** / python-multipart / openpyxl。
+  缓存目录必须可写；下载域名需要受信任证书。私有产物需要配置最小权限
+  `GITHUB_TOKEN`。不要在代码或 manifest 写入真实凭据。
+- 四个产物总计约 599 MiB；百万行人员快照需要足够的运行内存和首次预热时间。
+  初次打开两个规划页会加载对应快照。仅发布 GitHub 不代表 Connect 已重新部署。
+- 规划页采用提交任务 + 轮询，避免冷启动大工作簿超出 HTTP 代理超时。
+  任务结果只存在内存，完成后一小时过期；Connect 应使用单 worker 或粘性路由。
+  重启后重新提交即可；同步 `/api/planning/recommend`、`allocate` 仍可直接调用。
 - Connect 对每个 Git 主机只支持一套凭据。
 
 若仍想用 Publisher 一键发布，请新建另一条 Connect 内容，不要改这条 Git 内容。
@@ -227,7 +239,8 @@ Copy-Item (Join-Path $tmp "manifest.json") .\manifest.json -Force
 
 推 GitHub 前：
 
-- [ ] `manifest.json` 存在，且 `entrypoint` 为 `app.py`
+- [ ] `manifest.json` 存在，且 `entrypoint` 为 `app:app`、`appmode` 为 `python-fastapi`
+- [ ] 清单包含 `match_person.py`、规划 API、三个前端文件和四个原始产物
 - [ ] `git status` 无 `.env`
 - [ ] 仓库为 Private
 - [ ] 远程 URL 无用户名/密码
@@ -241,6 +254,8 @@ Connect 上：
 
 ---
 
-**App**：DID Q&A（RSC / Streamlit）  
-**Python**：3.11.1  
+**App**：DID Q&A（RSC / FastAPI）
+
+**Python**：≥3.11；当前验证环境 3.13.0
+
 **Connect**：https://rsc.pfizer.com

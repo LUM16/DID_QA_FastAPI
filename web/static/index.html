@@ -175,6 +175,15 @@
   <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
 </header>
 
+<nav class="planning-tabs" aria-label="Workflows">
+  <button class="primary" data-workflow="chat" aria-pressed="true">Ask Neo4j</button>
+  <button data-workflow="recommend" aria-pressed="false">Recommend Team</button>
+  <button data-workflow="allocate" aria-pressed="false">Allocate TLF People</button>
+</nav>
+<main id="planning" hidden></main>
+<link rel="stylesheet" href="static/planning.css"/>
+<script src="static/planning.js" defer></script>
+
 <main id="chat">
   <div class="msg ai"><div class="bubble">
     Hi, I'm DID Insight. Ask a question in English or Chinese, for example:

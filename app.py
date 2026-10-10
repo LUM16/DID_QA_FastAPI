@@ -32,6 +32,7 @@ from neo4j_client import (
     run_cypher_with_meta,
 )
 from vox_client import vox_health
+from planning_api import router as planning_router
 
 STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 MAX_EXPORT_ROWS = 20000
@@ -60,6 +61,7 @@ async def lifespan(app_instance: FastAPI):
 
 
 app = FastAPI(title="DID Insight", version="2.0.0", lifespan=lifespan)
+app.include_router(planning_router)
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 

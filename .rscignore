@@ -6,3 +6,5 @@ __pycache__/
 .posit/
 .venv/
 venv/
+.artifact-cache/
+.test-work/

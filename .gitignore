@@ -33,8 +33,12 @@ Thumbs.db
 credentials.json
 
 # Generated effort-prediction data and models
-artifacts/
+artifacts/*
+!artifacts/*.joblib
+!artifacts/provenance.json
 data/
+.artifact-cache/
+.test-work/
 
 # Sizhen for test
 test_extract_effort_person.py

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 from collections import defaultdict
@@ -11,7 +10,7 @@ from datetime import datetime
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
 import joblib
 from openpyxl import Workbook
@@ -36,7 +35,6 @@ from effort_prediction import (
     _save_similarity_cache,
 )
 from neo4j_client import get_driver, load_env
-from vox_client import chat
 
 TLF_PERSON_SNAPSHOT_VERSION = "tlf-person-allocation-v1"
 DEFAULT_TLF_PERSON_SNAPSHOT_PATH = (
@@ -184,6 +182,7 @@ def _load_person_tlf_snapshot_cached(
         raise ValueError(f"Invalid TLF person-allocation snapshot: {path.resolve()}")
     return snapshot["history_rows"], snapshot["workload_rows"], {
         "path": str(path.resolve()),
+        "version": snapshot["version"],
         "generated_at": snapshot["generated_at"],
         "history_row_count": len(snapshot["history_rows"]),
         "workload_row_count": len(snapshot["workload_rows"]),
@@ -217,42 +216,20 @@ def team_lead_candidates(history_rows: Iterable[dict[str, Any]]) -> list[str]:
     )
 
 
-def _json_object(text: str) -> dict[str, Any]:
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", stripped, flags=re.I)
-    payload = json.loads(stripped)
-    if not isinstance(payload, dict):
-        raise ValueError("The Team Lead matcher did not return a JSON object.")
-    return payload
-
-
 def resolve_team_lead_name(
     entered_name: str,
     candidates: Iterable[str],
-    chat_fn: Callable[..., tuple[str, dict[str, int]]] = chat,
 ) -> dict[str, Any]:
-    """Use Vox for extraction, then accept only the literal stored candidate it returns."""
+    """Validate the user's explicit selection without guessing or calling an LLM."""
     allowed = list(dict.fromkeys(str(item).strip() for item in candidates if str(item).strip()))
     if not allowed:
         raise ValueError("The snapshot has no Team_Lead_Name candidates.")
-    system = (
-        "Return JSON only: {\"team_lead_name\":\"<exact candidate or empty string>\"}. "
-        "Match the user's Team Lead text only to one item in the supplied candidates. "
-        "Never create, correct, abbreviate, or return any other name."
-    )
-    user = json.dumps(
-        {"entered_name": entered_name, "candidates": allowed},
-        ensure_ascii=False,
-    )
-    raw, usage = chat_fn(system, user, temperature=0)
-    selected = str(_json_object(raw).get("team_lead_name") or "").strip()
+    selected = entered_name.strip()
     if selected not in allowed:
         raise ValueError(
-            "The LLM match is not an exact Team_Lead_Name candidate in this snapshot. "
-            "Choose or enter a stored Team Lead name."
+            "Select an exact Team_Lead_Name from the searchable snapshot candidates."
         )
-    return {"team_lead_name": selected, "usage": usage, "raw_match": selected}
+    return {"team_lead_name": selected}
 
 
 def _single_tlf(row: dict[str, Any]) -> dict[str, str]:
@@ -713,11 +690,10 @@ def allocate_uploaded_tlfs(
     team_lead_input: str,
     primary_file: Any,
     data_csv_file: Any | None = None,
-    chat_fn: Callable[..., tuple[str, dict[str, int]]] = chat,
 ) -> dict[str, Any]:
-    """Load the upload and local snapshot, resolve the team, and allocate TLFs."""
+    """Validate the selected snapshot team and allocate TLFs without an LLM."""
     history_rows, workload_rows, snapshot = load_person_tlf_snapshot()
-    match = resolve_team_lead_name(team_lead_input, team_lead_candidates(history_rows), chat_fn)
+    match = resolve_team_lead_name(team_lead_input, team_lead_candidates(history_rows))
     scope = load_uploaded_scope(primary_file, data_csv_file)
     grouped_targets = _grouped_targets(scope)
     result = allocate_tlf_people(

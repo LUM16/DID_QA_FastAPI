@@ -11,7 +11,7 @@ import math
 import os
 import re
 import sys
-import tempfile
+from uuid import uuid4
 from datetime import date, datetime
 from functools import lru_cache
 from itertools import groupby
@@ -42,7 +42,8 @@ DEFAULT_SIMILARITY_CACHE_PATH = (
     / "did_effort_similarity_cache.joblib"
 )
 GITHUB_ARTIFACT_BASE_URL = (
-    "https://media.githubusercontent.com/media/LUM16/DID_QA/main/artifacts"
+    "https://media.githubusercontent.com/media/LUM16/DID_QA_FastAPI/"
+    "published-artifacts-26af6b5/artifacts"
 )
 DEFAULT_MODEL_URL = f"{GITHUB_ARTIFACT_BASE_URL}/did_effort_model.joblib"
 DEFAULT_SIMILARITY_CACHE_URL = (
@@ -672,15 +673,18 @@ def _load_similarity_cache(path: Path) -> dict[str, Any]:
 
 def _save_similarity_cache(cache: dict[str, Any], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_suffix(path.suffix + ".tmp")
-    joblib.dump(
-        {
-            "version": SIMILARITY_CACHE_VERSION,
-            "entries": cache["entries"],
-        },
-        temporary_path,
-    )
-    temporary_path.replace(path)
+    temporary_path = path.with_suffix(path.suffix + f".{uuid4().hex}.tmp")
+    try:
+        joblib.dump(
+            {
+                "version": SIMILARITY_CACHE_VERSION,
+                "entries": cache["entries"],
+            },
+            temporary_path,
+        )
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def _is_lfs_pointer(path: Path) -> bool:
@@ -693,7 +697,7 @@ def _prediction_artifact_cache_dir() -> Path:
     cache_dir = (
         Path(configured)
         if configured
-        else Path(tempfile.gettempdir()) / "did_qa_effort_artifacts"
+        else Path(__file__).resolve().parent / ".artifact-cache" / "published-artifacts-26af6b5"
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
@@ -701,7 +705,7 @@ def _prediction_artifact_cache_dir() -> Path:
 
 def _download_prediction_artifact(url: str, destination: Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = destination.with_suffix(destination.suffix + ".download")
+    temporary_path = destination.with_suffix(destination.suffix + f".{uuid4().hex}.download")
     headers = {"User-Agent": "did-qa-effort-prediction"}
     github_token = os.environ.get("GITHUB_TOKEN")
     if github_token:
@@ -715,6 +719,16 @@ def _download_prediction_artifact(url: str, destination: Path) -> Path:
             raise ValueError(
                 f"GitHub returned an LFS pointer instead of artifact data from {url}."
             )
+        provenance_path = Path(__file__).resolve().parent / "artifacts" / "provenance.json"
+        if provenance_path.is_file():
+            expected = json.loads(provenance_path.read_text(encoding="utf-8"))["artifacts"].get(destination.name)
+            if expected:
+                import hashlib
+
+                with temporary_path.open("rb") as downloaded:
+                    actual = hashlib.file_digest(downloaded, "sha256").hexdigest()
+                if actual != expected["sha256"] or temporary_path.stat().st_size != expected["size"]:
+                    raise ValueError(f"Artifact integrity verification failed: {destination.name}.")
         temporary_path.replace(destination)
     finally:
         if temporary_path.exists():
@@ -727,6 +741,19 @@ def _resolve_prediction_artifact(
 ) -> Path:
     resolved_path = path.resolve()
     if resolved_path.exists() and not _is_lfs_pointer(resolved_path):
+        if resolved_path == DEFAULT_SIMILARITY_CACHE_PATH.resolve():
+            # Published artifacts are immutable; new similarity pairs are runtime data.
+            import shutil
+
+            runtime_path = _prediction_artifact_cache_dir() / default_path.name
+            if not runtime_path.exists():
+                staged = runtime_path.with_suffix(runtime_path.suffix + f".{uuid4().hex}.copy")
+                try:
+                    shutil.copyfile(resolved_path, staged)
+                    staged.replace(runtime_path)
+                finally:
+                    staged.unlink(missing_ok=True)
+            return runtime_path
         return resolved_path
     if resolved_path != default_path.resolve():
         raise FileNotFoundError(f"Effort prediction artifact not found: {resolved_path}.")

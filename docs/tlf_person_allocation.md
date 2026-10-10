@@ -26,9 +26,11 @@ TLF sheet/CSV 中使用 `Title`、`Type`、`Source Datasets`。Data 中的
 `SDTM/ADaM` 与 `Domain/Dataset Name` 只用于识别 source/domain group；
 它们不直接参加个人评分。
 
-用户还需要输入 DU Team Lead 名称。Vox/LLM 仅执行一次受限名称匹配：它
-只能从 snapshot 中真实存在的 `Team_Lead_Name` 候选列表返回一个**完全一致**
-的值。任何新造、纠正或缩写后的团队名称都会被拒绝。
+用户从可搜索下拉菜单选择 Team Lead：输入几个字符筛选完整候选，再明确选择。
+候选来自 allocation snapshot 中真实存在的 `Team_Lead_Name`，去重并排序。
+Python 校验选择必须与候选完全一致，不自动猜测、纠正或接受缩写。
+整个 allocation 流程不调用 Vox/LLM，也不随输入字符查询 Neo4j。
+名单反映 snapshot 刷新时的组织状态；组织变化后需刷新 snapshot。
 
 ### 输出
 

@@ -1,0 +1,28 @@
+{
+  "source_repository": "https://github.com/LUM16/DID_QA",
+  "source_commit": "26af6b5b8ebf5c106da582dca7bc4c33eb9a258d",
+  "destination_repository": "https://github.com/LUM16/DID_QA_FastAPI",
+  "artifact_ref": "published-artifacts-26af6b5",
+  "migration": "Exact published Git LFS bytes; no retraining or live Neo4j refresh.",
+  "scikit_learn_version": "1.9.1",
+  "artifacts": {
+    "did_effort_model.joblib": {
+      "size": 255460530,
+      "sha256": "3ebb9086c5acd6904097155142b97bddf0b7ac870338e812f0150156267ba408",
+      "contents": "Trained effort prediction pipeline, historical records and metadata."
+    },
+    "did_effort_similarity_cache.joblib": {
+      "size": 53728398,
+      "sha256": "b81eaa874315e934478093e65ddc4bccd9218c235c267b69f74b5220cb927c65"
+    },
+    "du_team_history_snapshot.joblib": {
+      "size": 36982995,
+      "sha256": "65965078f4bad72ee3f32f2f6ae9aa72dc099228fb9422687b2736d353276357",
+      "version": "du-team-history-v4-ta-group-hierarchy"
+    },
+    "tlf_person_allocation_snapshot.joblib": {
+      "size": 281627488,
+      "sha256": "bb60e91eb4eee54e1e792d58467e8d935a5d38d8a65ad346444a7f5c626b3ea6"
+    }
+  }
+}
