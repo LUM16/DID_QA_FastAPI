@@ -83,33 +83,71 @@ class PlanningAPITests(unittest.TestCase):
             properties = schema["components"]["schemas"][body["$ref"].split("/")[-1]]["properties"]
             self.assertEqual(set(properties), {"ta_lead_name", "primary_file"})
 
-    def test_csv_allocation_still_requires_data(self):
+    def test_single_csv_and_tlf_only_workbook_allocation_and_excel_without_llm_or_database(self):
+        book = Workbook()
+        book.active.title = "TLF"
+        book.active.append(["Title", "Type", "Source Datasets"])
+        book.active.append(["AE Summary", "T", "ADAE"])
+        workbook = io.BytesIO()
+        book.save(workbook)
+        book.close()
         with patch("tlf_person_allocation.load_person_tlf_snapshot",
                    return_value=([{"team_lead_name": "Exact, Lead"}], [], {})), \
-             patch("vox_client.chat", side_effect=AssertionError("Unexpected LLM call")):
+             patch("tlf_person_allocation.allocate_tlf_people", return_value={
+                 "allocations": [{
+                     "tlf": {"name": "AE Summary", "type": "T", "source": "ADAE"}, "group": "Source: ADAE",
+                     "generation": {"primary": None, "backups": []},
+                     "qc": {"primary": None, "backups": []},
+                     "lead_review_required": True, "fallback_reason": "Review",
+                 }],
+             }) as rank, \
+             patch("vox_client.chat", side_effect=AssertionError("Unexpected LLM call")) as llm, \
+             patch("tlf_person_allocation._read_query", side_effect=AssertionError("Unexpected Neo4j query")) as query:
             for route in ["/api/planning/allocate", "/api/planning/jobs/allocate"]:
-                response = self.client.post(route, data={"team_lead_name": "Exact, Lead"},
-                                            files={"primary_file": ("TLF.csv", b"Title\nA\n")})
-                if "/jobs/" in route:
-                    response = self.client.get(f"/api/planning/jobs/{response.json()['job_id']}")
-                    self.assertEqual(response.json()["error_status"], 422)
-                    message = response.json()["error"]
-                else:
-                    self.assertEqual(response.status_code, 422)
-                    message = response.json()["detail"]
-                self.assertIn("both TLF CSV and Data CSV", message)
+                for filename, content in [
+                    ("TLF.csv", b"Title,Type,Source Datasets\nAE Summary,T,ADAE\n"),
+                    ("TLF-only.xlsx", workbook.getvalue()),
+                ]:
+                    with self.subTest(route=route, filename=filename):
+                        response = self.client.post(route, data={"team_lead_name": "Exact, Lead"},
+                                                    files={"primary_file": (filename, content)})
+                        self.assertEqual(response.status_code, 202 if "/jobs/" in route else 200)
+                        if "/jobs/" in route:
+                            response = self.client.get(f"/api/planning/jobs/{response.json()['job_id']}")
+                            self.assertEqual(response.json()["status"], "complete")
+                            result = response.json()["result"]
+                        else:
+                            result = response.json()
+                        self.assertEqual(rank.call_args.args[0], [{"name": "AE Summary", "type": "T", "source": "ADAE"}])
+                        self.assertEqual(rank.call_args.kwargs["group_keys"], ["Source: ADAE"])
+                        exported = self.client.post("/api/planning/allocate/excel", json={"result": result})
+                        self.assertEqual(exported.status_code, 200)
+                        exported_book = load_workbook(io.BytesIO(exported.content), read_only=True)
+                        self.assertEqual(exported_book.active.max_row, 2)
+                        exported_book.close()
+            llm.assert_not_called()
+            query.assert_not_called()
+
+    def test_allocation_contract_has_no_secondary_data_upload(self):
+        schema = app.openapi()
+        for route in ["/api/planning/allocate", "/api/planning/jobs/allocate"]:
+            body = schema["paths"][route]["post"]["requestBody"]["content"]["multipart/form-data"]["schema"]
+            form_schema = schema["components"]["schemas"][body["$ref"].split("/")[-1]]
+            self.assertEqual(set(form_schema["properties"]), {"team_lead_name", "primary_file"})
+            self.assertEqual(set(form_schema["required"]), {"team_lead_name", "primary_file"})
+        self.assertEqual(set(schema["components"]["schemas"]["AllocationExport"]["properties"]), {"result"})
 
     @patch("planning_api.allocate_uploaded_tlfs")
-    def test_xlsx_and_paired_csv_allocation_routes(self, allocate):
+    def test_xlsx_and_single_csv_allocation_routes(self, allocate):
         allocate.return_value = {"allocations": []}
         for files in [
             {"primary_file": ("scope.xlsx", b"mocked workbook", "application/octet-stream")},
-            {"primary_file": ("TLF.csv", b"Name\nA\n"), "data_csv_file": ("Data.csv", b"Name\nADAE\n")},
+            {"primary_file": ("TLF.csv", b"Name\nA\n")},
         ]:
             response = self.client.post("/api/planning/allocate", data={"team_lead_name": "Exact, Lead"}, files=files)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(allocate.call_args.args[0], "Exact, Lead")
-        self.assertEqual(allocate.call_args.args[2].name, "Data.csv")
+        self.assertEqual(len(allocate.call_args.args), 2)
 
     @patch("planning_api.allocate_uploaded_tlfs")
     def test_invalid_input_is_clear_422(self, allocate):

@@ -145,13 +145,10 @@
     const select = make('select'); select.required = true; select.setAttribute('aria-label', leadLabel);
     if (mode === 'allocate') { select.size = 5; label.append(search); }
     label.append(select); form.append(label);
-    const primaryLabel = make('label', mode === 'recommend' ? 'TLF workbook (.xlsx) or TLF CSV' : 'Workbook with TLF + Data sheets, or TLF CSV');
+    const primaryLabel = make('label', 'TLF workbook (.xlsx) or single TLF CSV');
     const primary = make('input'); primary.type = 'file'; primary.accept = '.xlsx,.csv'; primary.required = true; primaryLabel.append(primary); form.append(primaryLabel);
-    const dataLabel = make('label', 'Data CSV (required with TLF CSV)');
-    const data = make('input'); data.type = 'file'; data.accept = '.csv'; dataLabel.append(data);
     if (mode === 'allocate') {
-      dataLabel.hidden = true; form.append(dataLabel);
-      note(form, 'Workbooks use the embedded Data sheet. For CSV allocation, Data CSV columns SDTM/ADaM and Domain/Dataset Name identify source/domain groups.');
+      note(form, 'Upload one TLF CSV or a workbook with a TLF sheet. Source Datasets groups related TLFs; missing sources stay individual. An embedded Data sheet is optional and preserves direct SDTM grouping.');
     }
     const actions = make('div', undefined, 'planning-actions'), submit = make('button', mode === 'recommend' ? 'Recommend Team' : 'Allocate TLF People', 'primary');
     submit.type = 'submit'; submit.disabled = true;
@@ -183,26 +180,16 @@
     state.filter = filter;
     search.oninput = filter;
     select.onchange = invalidate;
-    function syncData() {
-      const needsData = mode === 'allocate' && !!primary.files[0]?.name.toLowerCase().endsWith('.csv');
-      dataLabel.hidden = !needsData; data.required = needsData; data.disabled = !needsData;
-      if (!needsData) data.value = '';
-    }
-    syncData();
-    primary.onchange = () => { syncData(); invalidate(); };
-    data.onchange = invalidate;
-    reset.onclick = () => { form.reset(); search.value = ''; select.value = ''; syncData(); filter(); };
+    primary.onchange = invalidate;
+    reset.onclick = () => { form.reset(); search.value = ''; select.value = ''; filter(); };
     form.onsubmit = async event => {
       event.preventDefault(); invalidate();
       if (!state.names.includes(select.value)) { status.textContent = 'Select a complete name from the snapshot list.'; return; }
-      const file = primary.files[0], dataFile = data.disabled ? undefined : data.files[0];
+      const file = primary.files[0];
       if (!file) { status.textContent = 'Select an input file.'; return; }
-      if (mode === 'allocate' && file.name.toLowerCase().endsWith('.csv') && !dataFile) {
-        status.textContent = 'CSV allocation requires both TLF CSV and Data CSV.'; return;
-      }
       const version = state.revision, controller = new AbortController(); state.controller = controller;
       const body = new FormData(); body.set(mode === 'recommend' ? 'ta_lead_name' : 'team_lead_name', select.value);
-      body.set('primary_file', file); if (dataFile) body.set('data_csv_file', dataFile);
+      body.set('primary_file', file);
       submit.disabled = true;
       const started = Date.now();
       const progress = () => { if (state.revision === version) status.textContent = `Comparing published snapshot evidence… ${Math.floor((Date.now() - started) / 1000)}s. No LLM or live Neo4j refresh.`; };

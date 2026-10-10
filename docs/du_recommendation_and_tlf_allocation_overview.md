@@ -240,18 +240,20 @@ DU score =
 
 1. 从可搜索下拉菜单明确选择完整 Team Lead 名称；
 2. 新 Delivery 的 scope：
-   - 带 `TLF` 和 `Data` sheet 的 Excel；或
-   - 一份 TLF CSV 和一份 Data CSV。
+   - 带 `TLF` sheet 的 Excel（`Data` sheet 可选）；或
+   - 单独一份 TLF CSV，无需第二个 Data 上传入口。
 
 其中：
 
 ```text
 TLF: Title, Type, Source Datasets
-Data: SDTM/ADaM, Domain/Dataset Name
+可选 workbook Data: SDTM/ADaM, Domain/Dataset Name
 ```
 
-Data 文件不直接给人员打分；它只用于将相关 TLF 归为同一 source/domain group，以减少
-不必要的交接。
+无需 Data 时仍按 `Source Datasets` 将相关 TLF 分组；缺少 source 则逐条独立，
+不虚构 ADaM → SDTM 映射。workbook 原有 Data sheet 保留直接 SDTM 匹配分组能力，
+不直接给人员打分。同步和后台 API 只上传 `primary_file` 与完整 `team_lead_name`，
+Excel 导出仅使用已有 allocation result；core 可选 Data 参数仅保留旧调用兼容性。
 
 ### 4.3 候选人筛选
 
@@ -375,7 +377,7 @@ primary/backup 分列，便于 Lead review、会议讨论和后续操作。
 2. 在 Recommend Team 选择 Henry 或 Priya，并上传 TLF scope
 3. 审核排序、TLF coverage evidence 和 current workload
 4. 确认一个 DU Team
-5. 在 Allocate TLF People 搜索并选择该 Team Lead，上传 TLF/Data scope
+5. 在 Allocate TLF People 搜索并选择该 Team Lead，上传单份 TLF CSV 或 workbook（Data sheet 可选）
 6. 审核 Gen/QC primary、backup、group 连续性和 review flags
 7. Lead 结合技能、availability、priority、休假和培训状态作最终决定
 8. 在正式业务系统中执行人员分配

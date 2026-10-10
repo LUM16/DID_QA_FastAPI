@@ -691,10 +691,10 @@ def allocate_uploaded_tlfs(
     primary_file: Any,
     data_csv_file: Any | None = None,
 ) -> dict[str, Any]:
-    """Validate the selected snapshot team and allocate TLFs without an LLM."""
+    """Allocate a single TLF upload; optional Data only enriches grouping."""
     history_rows, workload_rows, snapshot = load_person_tlf_snapshot()
     match = resolve_team_lead_name(team_lead_input, team_lead_candidates(history_rows))
-    scope = load_uploaded_scope(primary_file, data_csv_file)
+    scope = load_uploaded_scope(primary_file, data_csv_file, require_data=False)
     grouped_targets = _grouped_targets(scope)
     result = allocate_tlf_people(
         [target for target, _ in grouped_targets],

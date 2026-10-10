@@ -41,13 +41,13 @@ JOB_TTL_SECONDS = 3600
 MAX_JOBS = 8
 
 
-def _input(upload: UploadFile | None, *, data: bool = False) -> io.BytesIO | None:
+def _input(upload: UploadFile | None) -> io.BytesIO | None:
     if upload is None:
         return None
     filename = Path(upload.filename or "").name
     suffix = Path(filename).suffix.lower()
-    if suffix not in ({".csv"} if data else {".csv", ".xlsx"}):
-        raise HTTPException(422, "Upload a Data CSV (.csv)." if data else "Upload a TLF workbook (.xlsx) or TLF CSV (.csv).")
+    if suffix not in {".csv", ".xlsx"}:
+        raise HTTPException(422, "Upload a TLF workbook (.xlsx) or TLF CSV (.csv).")
     content = upload.file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Each uploaded file must be at most 20 MB.")
@@ -104,9 +104,8 @@ def recommend(
 def allocate(
     team_lead_name: str = Form(...),
     primary_file: UploadFile = File(...),
-    data_csv_file: UploadFile | None = File(None),
 ) -> dict[str, Any]:
-    return _run(allocate_uploaded_tlfs, team_lead_name, _input(primary_file), _input(data_csv_file, data=True))
+    return _run(allocate_uploaded_tlfs, team_lead_name, _input(primary_file))
 
 
 def _prune_jobs() -> None:
@@ -161,9 +160,8 @@ def allocation_job(
     background: BackgroundTasks,
     team_lead_name: str = Form(...),
     primary_file: UploadFile = File(...),
-    data_csv_file: UploadFile | None = File(None),
 ) -> dict[str, str]:
-    return _new_job(background, allocate_uploaded_tlfs, team_lead_name, _input(primary_file), _input(data_csv_file, data=True))
+    return _new_job(background, allocate_uploaded_tlfs, team_lead_name, _input(primary_file))
 
 
 @router.get("/jobs/{job_id}")

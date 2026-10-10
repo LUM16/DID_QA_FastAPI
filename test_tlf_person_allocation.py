@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from tlf_person_allocation import (
     DEFAULT_TLF_PERSON_SNAPSHOT_PATH,
@@ -92,10 +92,6 @@ class TlfPersonAllocationTests(unittest.TestCase):
             b"Title,Type,Source Datasets\nAE Summary,T,ADAE\n"
         )
         upload.name = "scope.csv"
-        data_upload = BytesIO(
-            b"SDTM/ADaM,Domain/Dataset Name\nADaM,ADAE\n"
-        )
-        data_upload.name = "data.csv"
         with (
             patch("tlf_person_allocation.load_person_tlf_snapshot",
                   return_value=(rows, [], {"generated_at": "test"})),
@@ -105,7 +101,7 @@ class TlfPersonAllocationTests(unittest.TestCase):
             patch("tlf_person_allocation._read_query",
                   side_effect=AssertionError("Neo4j queried")) as query,
         ):
-            result = allocate_uploaded_tlfs("Team A", upload, data_upload)
+            result = allocate_uploaded_tlfs("Team A", upload)
             with self.assertRaisesRegex(ValueError, "exact Team_Lead_Name"):
                 allocate_uploaded_tlfs("Unknown", upload)
         self.assertEqual(result["team_match"], {"team_lead_name": "Team A"})
@@ -113,6 +109,84 @@ class TlfPersonAllocationTests(unittest.TestCase):
         self.assertEqual(result["allocations"][0]["qc"]["primary"]["person"], "QC")
         llm.assert_not_called()
         query.assert_not_called()
+
+    def test_single_upload_grouping_and_optional_data_preserve_allocation(self) -> None:
+        from du_team_recommendation import load_uploaded_scope
+
+        targets = [
+            {"name": "AE Summary", "type": "T", "source": "AE"},
+            {"name": "AE Listing", "type": "L", "source": "AE"},
+            {"name": "ADAE Summary", "type": "T", "source": "ADAE"},
+            {"name": "Missing source 1", "type": "T", "source": ""},
+            {"name": "Missing source 2", "type": "T", "source": ""},
+        ]
+        rows = [
+            {**evidence(person, role, f"D{index}-{person}", target["name"]),
+             "tlf_type": target["type"], "tlf_source": target["source"]}
+            for index, target in enumerate(targets)
+            for role, people in [("generation", ["G1", "G2", "G3"]), ("qc", ["Q1", "Q2", "Q3"])]
+            for person in people
+        ]
+        csv_upload = BytesIO(
+            b"Title,Type,Source Datasets\nAE Summary,T,AE\nAE Listing,L,AE\n"
+            b"ADAE Summary,T,ADAE\nMissing source 1,T,\nMissing source 2,T,\n"
+        )
+        csv_upload.name = "TLF.csv"
+        data_upload = BytesIO(b"SDTM/ADaM,Domain/Dataset Name\nSDTM,AE\nADaM,ADAE\n")
+        data_upload.name = "Data.csv"
+        book = Workbook()
+        book.active.title = "TLF"
+        book.active.append(["Title", "Type", "Source Datasets"])
+        for target in targets:
+            book.active.append([target["name"], target["type"], target["source"]])
+        tlf_only = BytesIO()
+        tlf_only.name = "TLF-only.xlsx"
+        book.save(tlf_only)
+        book.create_sheet("Data").append(["SDTM/ADaM", "Domain/Dataset Name"])
+        book["Data"].append(["SDTM", "AE"])
+        book["Data"].append(["ADaM", "ADAE"])
+        with_data = BytesIO()
+        with_data.name = "TLF-and-Data.xlsx"
+        book.save(with_data)
+        book.close()
+
+        with (
+            patch("tlf_person_allocation.load_person_tlf_snapshot", return_value=(rows, [], {})),
+            patch("tlf_person_allocation._resolve_recommendation_cache_path",
+                  return_value=self.workspace / "single-upload-cache.joblib"),
+            patch("vox_client.chat", side_effect=AssertionError("LLM called")) as llm,
+            patch("tlf_person_allocation._read_query", side_effect=AssertionError("Neo4j queried")) as query,
+            patch("du_team_recommendation._read_query", side_effect=AssertionError("Neo4j queried")) as team_query,
+        ):
+            csv_result = allocate_uploaded_tlfs("Team A", csv_upload)
+            excel_result = allocate_uploaded_tlfs("Team A", tlf_only)
+            self.assertEqual(csv_result["allocations"], excel_result["allocations"])
+            self.assertEqual([a["group"] for a in csv_result["allocations"]], [
+                "Source: AE", "Source: AE", "Source: ADAE",
+                "Individual: TLF 4", "Individual: TLF 5",
+            ])
+            workbook_result = allocate_uploaded_tlfs("Team A", with_data)
+            compatibility_result = allocate_uploaded_tlfs("Team A", csv_upload, data_upload)
+            self.assertEqual(workbook_result["allocations"], compatibility_result["allocations"])
+            legacy_targets = _grouped_targets(load_uploaded_scope(with_data, require_data=True))
+            legacy_result = allocate_tlf_people(
+                [target for target, _ in legacy_targets], "Team A", rows, [],
+                self.workspace / "legacy-cache.joblib",
+                group_keys=[group for _, group in legacy_targets],
+            )
+            self.assertEqual(workbook_result["allocations"], legacy_result["allocations"])
+            self.assertEqual([a["group"] for a in workbook_result["allocations"]], [
+                "SDTM: AE", "SDTM: AE", "Source: ADAE",
+                "Individual: TLF 4", "Individual: TLF 5",
+            ])
+            for result in [csv_result, workbook_result]:
+                for item in result["allocations"]:
+                    self.assertNotEqual(item["generation"]["primary"]["person"], item["qc"]["primary"]["person"])
+                    self.assertEqual(len(item["generation"]["backups"]), 2)
+                    self.assertEqual(len(item["qc"]["backups"]), 2)
+        llm.assert_not_called()
+        query.assert_not_called()
+        team_query.assert_not_called()
 
     def test_allocation_ui_requires_explicit_searchable_team_selection(self) -> None:
         from fastapi.testclient import TestClient
@@ -139,7 +213,6 @@ class TlfPersonAllocationTests(unittest.TestCase):
             )
             files = {
                 "primary_file": ("scope.csv", b"Title,Type,Source Datasets\nAE Summary,T,ADAE\n", "text/csv"),
-                "data_csv_file": ("data.csv", b"SDTM/ADaM,Domain/Dataset Name\nADaM,ADAE\n", "text/csv"),
             }
             invalid = client.post("/api/planning/allocate", data={"team_lead_name": "Partial"}, files=files)
             self.assertEqual(invalid.status_code, 422)
@@ -149,7 +222,11 @@ class TlfPersonAllocationTests(unittest.TestCase):
             script = client.get("/static/planning.js").text
             self.assertIn("select.selectedIndex = mode === 'recommend' ? 0 : -1", script)
             self.assertIn("if (mode === 'allocate') { select.size = 5; label.append(search); }", script)
-            self.assertIn("data.required = needsData; data.disabled = !needsData", script)
+            self.assertIn("primary.onchange = invalidate", script)
+            self.assertIn("body.set('primary_file', file)", script)
+            for removed in ["Data CSV", "data_csv_file", "dataLabel", "dataFile", "syncData", "needsData"]:
+                self.assertNotIn(removed, script)
+            self.assertEqual(script.count("type = 'file'"), 1)
             self.assertNotIn("datalist", script)
             self.assertNotIn("DU", script)
         llm.assert_not_called()

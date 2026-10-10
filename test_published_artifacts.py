@@ -53,7 +53,6 @@ class PublishedArtifactTests(unittest.TestCase):
         writer.writerow(["Title", "Type", "Source Datasets"])
         writer.writerow([row["tlf_name"], row.get("tlf_type", ""), row.get("tlf_source", "")])
         tlf_csv = output.getvalue().encode("utf-8")
-        data_csv = b"SDTM/ADaM,Domain/Dataset Name\nADaM,ADAE\n"
         with tempfile.TemporaryDirectory() as cache_directory, \
              patch("effort_prediction._prediction_artifact_cache_dir", return_value=Path(cache_directory)), \
              patch("vox_client.chat", side_effect=AssertionError("Unexpected LLM call")), \
@@ -69,7 +68,7 @@ class PublishedArtifactTests(unittest.TestCase):
             self.assertGreater(recommended.json()["candidate_team_count"], 0)
             self.assertEqual(len(recommended.json()["recommendations"]), 3)
             allocated = client.post("/api/planning/allocate", data={"team_lead_name": lead},
-                                    files={"primary_file": ("TLF.csv", tlf_csv), "data_csv_file": ("Data.csv", data_csv)})
+                                    files={"primary_file": ("TLF.csv", tlf_csv)})
             self.assertEqual(allocated.status_code, 200, allocated.text[:200])
             result = allocated.json()
             self.assertEqual(result["team_match"]["team_lead_name"], lead)

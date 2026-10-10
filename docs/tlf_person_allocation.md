@@ -19,12 +19,15 @@ Lead 确认。
 
 用户上传以下任一种格式：
 
-1. 含有 `TLF` 和 `Data` sheet 的 Excel workbook；或
-2. 一份 TLF CSV 与一份 Data CSV。
+1. 含有 `TLF` sheet 的 Excel workbook（`Data` sheet 可选）；或
+2. 单独一份 TLF CSV，无需第二份 Data CSV。
 
-TLF sheet/CSV 中使用 `Title`、`Type`、`Source Datasets`。Data 中的
-`SDTM/ADaM` 与 `Domain/Dataset Name` 只用于识别 source/domain group；
-它们不直接参加个人评分。
+TLF sheet/CSV 中使用 `Title`、`Type`、`Source Datasets`。无需 Data 也可按
+`Source Datasets` 分组；缺少 source 的 TLF 分别独立，不推断 ADaM → SDTM 映射。
+若 workbook 原有 Data sheet，其 `SDTM/ADaM` 与 `Domain/Dataset Name`
+仍用于直接匹配 SDTM source/domain group，不直接参加个人评分。
+同步及后台 allocation API 均只接受 `team_lead_name`、`primary_file`；
+Excel 导出只接收已有 result。Python core 保留可选 `data_csv_file` 以兼容原有调用方。
 
 用户从可搜索下拉菜单选择 Team Lead：输入几个字符筛选完整候选，再明确选择。
 候选来自 allocation snapshot 中真实存在的 `Team_Lead_Name`，去重并排序。
