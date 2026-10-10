@@ -134,9 +134,6 @@
     const state = {loaded: false, revision: 0, controller: null};
     const panel = make('div'), card = make('section', undefined, 'planning-card');
     card.append(make('h2', mode === 'recommend' ? 'Recommend Team' : 'Allocate TLF People'));
-    note(card, mode === 'recommend'
-      ? 'Select a snapshot-backed TA Lead. Rank teams across all groups using TLF-only coverage 37%, similar completed DIDs 18%, recent experience 10%, and workload 35%. No group filter.'
-      : 'Select an exact Team Lead from the complete snapshot list; no LLM name matching. Historical role evidence, grouped distinct Generation/QC, backups, workload and run-local balancing are retained.');
     const example = make('a', 'Download example workbook'); example.href = 'api/planning/example'; card.append(example);
     const form = make('form', undefined, 'planning-form');
     const leadLabel = mode === 'recommend' ? 'TA Lead' : 'Team Lead';
