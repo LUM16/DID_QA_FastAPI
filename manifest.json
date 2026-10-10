@@ -182,7 +182,7 @@
       "checksum": "a834d53cdacad4cf4fee1d5be1de986c"
     },
     "test_planning_api.py": {
-      "checksum": "fdcadc9f671d53be41a85bbd13181540"
+      "checksum": "a37370cdff9007bc8cca6551611f18cb"
     },
     "test_published_artifacts.py": {
       "checksum": "c7887a7115baf66fe9901f374ad66049"
@@ -218,7 +218,7 @@
       "checksum": "b1acbc2796c42d7eefc1b435f0878183"
     },
     "web/static/planning.js": {
-      "checksum": "cf538947bd077fe8407071b4f0f7deda"
+      "checksum": "43ac1220b445c41872933f8775fecb2b"
     }
   }
 }

@@ -271,6 +271,37 @@ class PlanningAPITests(unittest.TestCase):
         close.assert_called_once()
 
 
+class PlanningUISelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.script = (Path(__file__).parent / "web" / "static" / "planning.js").read_text()
+
+    def test_explicit_allocation_selection_fills_search_and_invalidates_results(self):
+        self.assertIn(
+            "select.onchange = () => {\n"
+            "      if (mode === 'allocate') search.value = select.value;\n"
+            "      invalidate();\n"
+            "    };",
+            self.script,
+        )
+
+    def test_search_edit_clears_actual_selection_before_filtering(self):
+        self.assertIn(
+            "search.oninput = () => {\n"
+            "      select.value = '';\n"
+            "      filter();\n"
+            "    };",
+            self.script,
+        )
+        self.assertIn("if (!select.value) select.selectedIndex = mode === 'recommend' ? 0 : -1;", self.script)
+        self.assertIn("results.replaceChildren(); status.textContent = '';", self.script)
+        self.assertIn("state.revision++; state.controller?.abort();", self.script)
+
+    def test_reset_and_ta_dropdown_keep_existing_selection_contract(self):
+        self.assertIn("if (mode === 'allocate') { select.size = 5; label.append(search); }", self.script)
+        self.assertIn("reset.onclick = () => { form.reset(); search.value = ''; select.value = ''; filter(); };", self.script)
+        self.assertIn("if (!state.names.includes(select.value))", self.script)
+
+
 class ArtifactResolverTests(unittest.TestCase):
     def test_published_similarity_bytes_are_never_mutated(self):
         with tempfile.TemporaryDirectory() as directory:

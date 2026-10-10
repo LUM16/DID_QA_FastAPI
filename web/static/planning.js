@@ -178,8 +178,14 @@
       invalidate();
     }
     state.filter = filter;
-    search.oninput = filter;
-    select.onchange = invalidate;
+    search.oninput = () => {
+      select.value = '';
+      filter();
+    };
+    select.onchange = () => {
+      if (mode === 'allocate') search.value = select.value;
+      invalidate();
+    };
     primary.onchange = invalidate;
     reset.onclick = () => { form.reset(); search.value = ''; select.value = ''; filter(); };
     form.onsubmit = async event => {
