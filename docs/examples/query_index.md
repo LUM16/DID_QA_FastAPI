@@ -7,6 +7,7 @@ This index organizes the original `cypher examples.docx` into topic-based Markdo
 - `person_productivity.md` - Person Productivity Examples
 - `workload_planning.md` - Workload Planning Examples
 - `study_delivery.md` - Study and Delivery Examples
+- `submission.md` - Submission Examples
 - `lot_tlf_sdtm_adam.md` - LoT, TLF, SDTM, ADaM Examples
 - `team_manager.md` - Team, DU, Manager and TA Lead Examples
 - `reporting_dashboard.md` - Reporting Dashboard Examples

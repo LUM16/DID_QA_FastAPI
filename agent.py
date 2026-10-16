@@ -62,6 +62,13 @@ EXAMPLE_KEYWORDS = {
     ),
     "workload_planning.md": ("capacity", "plan", "planned", "ongoing", "workload", "resource", "规划", "负载"),
     "study_delivery.md": ("study", "delivery", "did", "status", "里程碑", "交付"),
+    "submission.md": (
+        "submission",
+        "dsp",
+        "project_name",
+        "submission lead",
+        "递交",
+    ),
     "lot_tlf_sdtm_adam.md": ("lot", "tlf", "sdtm", "adam", "submission", "产出物"),
     "team_manager.md": (
         "manager",
@@ -724,6 +731,17 @@ def _build_domain_context(question: str) -> str:
                 example_text,
             ]
         )
+    parts.extend(
+        [
+            "",
+            "Relationship directions that must not be invented:",
+            "(Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission)",
+            "(Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission)",
+            "(Study)-[:HAS_DETAIL]->(Study_Info) and DSP category is Study_Info.DSP_Flag",
+            "(Person)-[:LEADS_SUBMISSION]->(Submission)",
+            "SDTM, ADaM, and TLF are reached from Delivery with HAS_SDTM, HAS_ADAM, and HAS_TLF. They do not have SUPPORT_SUBMISSION.",
+        ]
+    )
     return "\n".join(parts)
 
 
@@ -757,8 +775,52 @@ def _first_study(question: str) -> str | None:
     return match.group(1).upper() if match else None
 
 
+_SUBMISSION_STUDY_RE = re.compile(
+    r"(?:studies|study).{0,80}?(?:contribute|contributing|support|supporting|related)"
+    r".{0,40}?to\s+(.+?)\s+submission\b",
+    re.IGNORECASE,
+)
+_SUBMISSION_KEYWORD_SKIP = {"the", "a", "an", "and", "or", "of", "for", "to"}
+
+
+def _submission_study_cypher(question: str) -> str | None:
+    """Studies contributing to a submission, matched by separate keywords."""
+    match = _SUBMISSION_STUDY_RE.search(question or "")
+    if not match:
+        return None
+    keywords: list[str] = []
+    for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9+-]*", match.group(1)):
+        if word.lower() in _SUBMISSION_KEYWORD_SKIP:
+            continue
+        keywords.append(word.upper())
+    if not keywords:
+        return None
+    project_checks = " AND ".join(
+        f"toUpper(sub.Project_Name) CONTAINS {_quote(word)}" for word in keywords
+    )
+    name_checks = " AND ".join(
+        f"toUpper(sub.Name) CONTAINS {_quote(word)}" for word in keywords
+    )
+    return f"""MATCH (sub:Submission)
+WHERE (sub.Project_Name IS NOT NULL AND {project_checks})
+   OR (sub.Name IS NOT NULL AND {name_checks})
+WITH DISTINCT sub
+MATCH (s:Study)
+OPTIONAL MATCH (s)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+OPTIONAL MATCH (s)-[:HAS_DID0]->(did0:DID0)-[:SUPPORT_SUBMISSION]->(sub)
+WITH s, d, did0
+WHERE d IS NOT NULL OR did0 IS NOT NULL
+OPTIONAL MATCH (s)-[:HAS_DETAIL]->(si:Study_Info)
+RETURN DISTINCT s.Name AS Study, si.DSP_Flag AS DSP_Category
+ORDER BY Study
+LIMIT 50"""
+
+
 def template_cypher(question: str) -> str | None:
     """Return deterministic Cypher for high-frequency simple queries."""
+    submission_cypher = _submission_study_cypher(question)
+    if submission_cypher:
+        return submission_cypher
     did = _first_did(question)
     if did and STATUS_QUERY_RE.search(question):
         value = _quote(did)
@@ -828,13 +890,15 @@ Rules:
 6. Use only property keys that appear in schema.propertyKeys or docs/schema.md.
 7. Cypher keywords stay in English; do not translate labels/properties.
 8. Follow rules and safe patterns from docs/skill.md, docs/schema.md, and docs/examples/*.md (ignore sensitive_excluded.md).
-9. Prefer business query patterns from person_productivity.md, workload_planning.md, study_delivery.md, lot_tlf_sdtm_adam.md, team_manager.md, reporting_dashboard.md, and query_index.md.
+9. Prefer business query patterns from person_productivity.md, workload_planning.md, study_delivery.md, submission.md, lot_tlf_sdtm_adam.md, team_manager.md, reporting_dashboard.md, and query_index.md.
 10. Do not generate employee ranking/performance-scoring queries.
 11. When user-endorsed thumbs-up examples are provided, prefer those Cypher patterns if they match the question.
 12. For org-chart / reporting-tree questions, prefer the scalar template columns person, reporting_level, reports_to, status so the UI can render both a table and an organization chart.
 13. WORKS_ON has no Task_Num_Total.
 14. If the user asks about tasks, return one row per Delivery with aliases Delivery, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date, CSR, SDA, STD, eSub. CSR/SDA/STD/eSub must be the four WORKS_ON task totals. Do not return only SUM() as a single total. Do not alias columns to raw names like CSR_Task_Num_Total.
-15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count."""
+15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.
+16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string.
+17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern."""
 
     user = f"""Schema:
 {schema_text}
@@ -877,7 +941,8 @@ Rules:
 7. Prefer the safe patterns from docs/skill.md and docs/examples/*.md (skip sensitive_excluded.md).
 8. Never use CREATE/MERGE/DELETE/SET/REMOVE/DROP or other write operations.
 9. Never use Task_Num_Total.
-10. Task and delivery questions must return one row per Delivery, not a single total."""
+10. Task and delivery questions must return one row per Delivery, not a single total.
+11. Studies reach a Submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not add HAS_SDTM, HAS_ADAM, or HAS_TLF on that path. Match submission keywords separately with toUpper CONTAINS on Project_Name, or separately on Name. DSP category is Study_Info.DSP_Flag."""
 
     user = f"""Schema:
 {schema_text}
@@ -1157,6 +1222,15 @@ def _format_local_answer(question: str, rows: list[dict[str, Any]]) -> str | Non
             if chinese
             else f"Found **{count}** matching deliveries. See the table below for details."
         )
+
+    if {"Study", "DSP_Category"} <= set(fields):
+        count = len(rows)
+        noun = "study" if count == 1 else "studies"
+        return (
+            f"找到 **{count}** 个相关 study，DSP category 见下方表格。"
+            if chinese
+            else f"Found **{count}** {noun}. DSP category is in the table below."
+        )
     return None
 
 
@@ -1231,6 +1305,8 @@ def _failure(state: AgentState) -> AgentState:
 
 
 def _after_execute(state: AgentState) -> Literal["repair", "answer", "failure"]:
+    if state.get("generated_locally") and not state.get("error"):
+        return "answer"
     if state.get("error"):
         return "repair" if state.get("repair_attempts", 0) == 0 else "failure"
     if not state.get("rows") and state.get("repair_attempts", 0) == 0:

@@ -65,6 +65,47 @@ class AgentTemplateTests(unittest.TestCase):
         self.assertNotIn("answer_generation", result["timings_ms"])
         self.assertIsNotNone(result["visualization"])
 
+    def test_submission_study_template_splits_keywords_and_uses_real_paths(self) -> None:
+        cypher = agent.template_cypher(
+            "Please list the studies that contribute to Litfulo vitiligo submission and show study DSP category"
+        )
+        self.assertIsNotNone(cypher)
+        self.assertIn('CONTAINS "LITFULO"', cypher)
+        self.assertIn('CONTAINS "VITILIGO"', cypher)
+        self.assertNotIn("LITFULO VITILIGO", cypher)
+        self.assertIn("sub.Project_Name", cypher)
+        self.assertIn("sub.Name", cypher)
+        self.assertIn("[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]", cypher)
+        self.assertIn("[:HAS_DID0]->(did0:DID0)-[:SUPPORT_SUBMISSION]", cypher)
+        self.assertIn("si.DSP_Flag AS DSP_Category", cypher)
+        self.assertNotIn("HAS_SDTM", cypher)
+        self.assertNotIn("HAS_ADAM", cypher)
+        self.assertNotIn("HAS_TLF", cypher)
+
+    def test_submission_study_question_skips_llm(self) -> None:
+        rows = [{"Study": "C3441021", "DSP_Category": "DSP"}]
+        with (
+            patch("agent.run_cypher", return_value=rows),
+            patch("agent._chat") as mock_chat,
+            patch("agent.get_schema") as mock_get_schema,
+            patch("agent._build_domain_context") as mock_context,
+        ):
+            result = agent.ask(
+                "Please list the studies that contribute to Litfulo vitiligo submission and show study DSP category"
+            )
+
+            mock_chat.assert_not_called()
+            mock_get_schema.assert_not_called()
+            mock_context.assert_not_called()
+        self.assertIn('CONTAINS "LITFULO"', result["cypher"])
+        self.assertIn('CONTAINS "VITILIGO"', result["cypher"])
+        self.assertNotIn("HAS_SDTM", result["cypher"])
+        self.assertEqual(
+            result["answer"],
+            "Found **1** study. DSP category is in the table below.",
+        )
+        self.assertEqual(result["rows"], rows)
+
 
 if __name__ == "__main__":
     unittest.main()

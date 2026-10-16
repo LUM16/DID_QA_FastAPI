@@ -38,6 +38,7 @@ You can answer questions about Study, Delivery, DID, SDSL, Group Lead, TA Lead, 
 12. Task questions must return one row per Delivery with aliases `Delivery`, `CSR`, `SDA`, `STD`, `eSub` plus status/detail/date fields. Do not return only a total.
 13. Delivery questions must list each Delivery with `DID_Status`, `Deliverable_Detail`, `Reporting_Detail`, and `Actual_Delivery_Date` (or `Planned_Delivery_Date` when status is Ongoing/Planned).
 14. In answers, call the four task types CSR, SDA, STD, and eSub. Never show raw property names. Omit a type when its value is 0.
+15. For studies that contribute to a submission, split the submission description into keywords. Match when `Submission.Project_Name` contains every keyword, or when `Submission.Name` contains every keyword. Reach studies only through `(Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission)` or `(Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission)`. DSP category is `Study_Info.DSP_Flag`.
 
 ## Example Usage Strategy
 
@@ -46,6 +47,7 @@ Use the topic examples in `examples/` as few-shot references:
 - `person_productivity.md`
 - `workload_planning.md`
 - `study_delivery.md`
+- `submission.md`
 - `lot_tlf_sdtm_adam.md`
 - `team_manager.md`
 - `reporting_dashboard.md`
