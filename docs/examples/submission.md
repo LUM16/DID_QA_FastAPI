@@ -17,6 +17,8 @@ China participation uses three paths. Do not put the China site filter inside `O
 - A China study SDSL: the contributing study's `Study.SDSL` is a Person from that China site.
 - A China PoC: `Study.SDSA_China_PoC` or `Delivery.SDSA_China_PoC` is non-blank on a contributing study or supporting delivery.
 
+A team is `Person.Team_Lead_Name`. For "which teams" questions, return the distinct team lead names of those China contributors. Do not list every person. The answer names the team by its team lead, for example `Jane Smith team`.
+
 ## sub001: Please list the studies that contribute to Litfulo vitiligo submission and show study DSP category.
 
 **Business intent**  
@@ -108,5 +110,40 @@ WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSA_China_PoC)
 WITH coalesce(p.Name, trim(s.SDSA_China_PoC)) AS Person, p.NTID AS NTID, collect(DISTINCT s.Name) AS Evidence
 RETURN Person, NTID, 'China PoC' AS Contribution, Evidence
 ORDER BY Person, Contribution
+LIMIT 50
+```
+
+## sub003: Which teams across China supported Litfulo vitiligo submission
+
+**Business intent**  
+A team is `Person.Team_Lead_Name`. Find China contributors to the submission, then return each distinct team lead. Do not list every person.
+
+**Cypher**
+
+```cypher
+CALL {
+  MATCH (sub:Submission)
+  WHERE (sub.Project_Name IS NOT NULL AND toUpper(sub.Project_Name) CONTAINS 'LITFULO' AND toUpper(sub.Project_Name) CONTAINS 'VITILIGO')
+     OR (sub.Name IS NOT NULL AND toUpper(sub.Name) CONTAINS 'LITFULO' AND toUpper(sub.Name) CONTAINS 'VITILIGO')
+  WITH DISTINCT sub
+  MATCH (p:Person)-[:WORKS_ON]->(:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+  MATCH (p)-[:FROM_SITE]->(site:Site)
+  WHERE toUpper(trim(site.Name)) = 'CHINA' OR toUpper(trim(coalesce(site.Category, ''))) = 'CHINA'
+  RETURN p
+  UNION
+  MATCH (sub:Submission)
+  WHERE (sub.Project_Name IS NOT NULL AND toUpper(sub.Project_Name) CONTAINS 'LITFULO' AND toUpper(sub.Project_Name) CONTAINS 'VITILIGO')
+     OR (sub.Name IS NOT NULL AND toUpper(sub.Name) CONTAINS 'LITFULO' AND toUpper(sub.Name) CONTAINS 'VITILIGO')
+  WITH DISTINCT sub
+  MATCH (s:Study)-[:HAS_DELIVERY]->(:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+  MATCH (p:Person)-[:FROM_SITE]->(site:Site)
+  WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSL)), ' ', '')
+    AND (toUpper(trim(site.Name)) = 'CHINA' OR toUpper(trim(coalesce(site.Category, ''))) = 'CHINA')
+  RETURN p
+}
+WITH p
+WHERE p.Team_Lead_Name IS NOT NULL AND trim(toString(p.Team_Lead_Name)) <> ''
+RETURN DISTINCT trim(toString(p.Team_Lead_Name)) AS Team_Lead
+ORDER BY Team_Lead
 LIMIT 50
 ```

@@ -130,6 +130,23 @@ class AgentTemplateTests(unittest.TestCase):
         self.assertIn("si.DSP_Flag AS DSP_Category", study_cypher)
         self.assertNotIn("SDSA_China_PoC", study_cypher)
 
+    def test_china_submission_teams_return_team_leads_only(self) -> None:
+        cypher = agent.template_cypher(
+            "which teams across China supported Litfulo vitiligo submission"
+        )
+        self.assertIsNotNone(cypher)
+        self.assertIn("p.Team_Lead_Name", cypher)
+        self.assertIn("AS Team_Lead", cypher)
+        self.assertIn('CONTAINS "LITFULO"', cypher)
+        self.assertIn('CONTAINS "VITILIGO"', cypher)
+        self.assertNotIn("'Delivery contributor'", cypher)
+        self.assertNotIn("AS Person", cypher)
+        people = agent.template_cypher(
+            "Who in China contributed to Litfulo vitiligo submission"
+        )
+        self.assertIn("'Delivery contributor'", people)
+        self.assertNotIn("AS Team_Lead", people)
+
 
 if __name__ == "__main__":
     unittest.main()

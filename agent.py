@@ -786,6 +786,16 @@ _CHINA_SUBMISSION_CONTRIBUTOR_RE = re.compile(
     r"(?:\bto\b|\bfor\b|\bof\b|了)?\s*(.+?)\s+submission\b",
     re.IGNORECASE,
 )
+_CHINA_SUBMISSION_TEAM_RE = re.compile(
+    r"(?:which|what|哪些|哪个).{0,40}?\bteams?\b.{0,80}?(?:\bchina\b|中国).{0,80}?"
+    r"(?:contribut\w*|work\w*|support\w*|参与|支持).{0,40}?"
+    r"(?:\bto\b|\bfor\b|\bof\b|了)?\s*(.+?)\s+submission\b"
+    r"|"
+    r"(?:which|what|哪些|哪个).{0,40}?(?:\bchina\b|中国).{0,40}?\bteams?\b.{0,80}?"
+    r"(?:contribut\w*|work\w*|support\w*|参与|支持).{0,40}?"
+    r"(?:\bto\b|\bfor\b|\bof\b|了)?\s*(.+?)\s+submission\b",
+    re.IGNORECASE,
+)
 _SUBMISSION_KEYWORD_SKIP = {"the", "a", "an", "and", "or", "of", "for", "to"}
 
 
@@ -831,8 +841,73 @@ ORDER BY Study
 LIMIT 50"""
 
 
+def _china_submission_people_subquery(submission: str, china_site: str) -> str:
+    """China contributors as Person nodes. Team questions aggregate these people."""
+    return f"""CALL {{
+{submission}
+MATCH (p:Person)-[:WORKS_ON]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+MATCH (p)-[:FROM_SITE]->(site:Site)
+WHERE {china_site}
+RETURN p
+UNION
+{submission}
+MATCH (s:Study)
+OPTIONAL MATCH (s)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+OPTIONAL MATCH (s)-[:HAS_DID0]->(did0:DID0)-[:SUPPORT_SUBMISSION]->(sub)
+WITH s, d, did0
+WHERE (d IS NOT NULL OR did0 IS NOT NULL)
+  AND s.SDSL IS NOT NULL AND trim(s.SDSL) <> ''
+MATCH (p:Person)-[:FROM_SITE]->(site:Site)
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSL)), ' ', '')
+  AND {china_site}
+RETURN p
+UNION
+{submission}
+MATCH (d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+WHERE d.SDSA_China_PoC IS NOT NULL AND trim(d.SDSA_China_PoC) <> ''
+MATCH (p:Person)
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(d.SDSA_China_PoC)), ' ', '')
+RETURN p
+UNION
+{submission}
+MATCH (s:Study)
+OPTIONAL MATCH (s)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+OPTIONAL MATCH (s)-[:HAS_DID0]->(did0:DID0)-[:SUPPORT_SUBMISSION]->(sub)
+WITH s, d, did0
+WHERE (d IS NOT NULL OR did0 IS NOT NULL)
+  AND s.SDSA_China_PoC IS NOT NULL AND trim(s.SDSA_China_PoC) <> ''
+MATCH (p:Person)
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSA_China_PoC)), ' ', '')
+RETURN p
+}}"""
+
+
+def _china_submission_team_cypher(question: str) -> str | None:
+    """Teams are distinct Person.Team_Lead_Name values, not every contributor."""
+    match = _CHINA_SUBMISSION_TEAM_RE.search(question or "")
+    if not match:
+        return None
+    phrase = next(group for group in match.groups() if group)
+    keywords = _submission_keywords(phrase)
+    if not keywords:
+        return None
+    china_site = """(
+  toUpper(trim(site.Name)) = 'CHINA'
+  OR toUpper(trim(coalesce(site.Category, ''))) = 'CHINA'
+)"""
+    people = _china_submission_people_subquery(_submission_filter(keywords), china_site)
+    return f"""{people}
+WITH p
+WHERE p.Team_Lead_Name IS NOT NULL AND trim(toString(p.Team_Lead_Name)) <> ''
+RETURN DISTINCT trim(toString(p.Team_Lead_Name)) AS Team_Lead
+ORDER BY Team_Lead
+LIMIT 50"""
+
+
 def _china_submission_contributor_cypher(question: str) -> str | None:
     """China contributors to a submission: China-site delivery staff, China SDSL, or China PoC."""
+    if re.search(r"\bteams?\b|团队", question or "", re.IGNORECASE):
+        return None
     match = _CHINA_SUBMISSION_CONTRIBUTOR_RE.search(question or "")
     if not match:
         return None
@@ -889,6 +964,9 @@ LIMIT 50"""
 
 def template_cypher(question: str) -> str | None:
     """Return deterministic Cypher for high-frequency simple queries."""
+    team_cypher = _china_submission_team_cypher(question)
+    if team_cypher:
+        return team_cypher
     china_cypher = _china_submission_contributor_cypher(question)
     if china_cypher:
         return china_cypher
@@ -973,7 +1051,8 @@ Rules:
 15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.
 16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string.
 17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern.
-18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC or Delivery.SDSA_China_PoC on a contributing study or supporting delivery. Follow submission.md."""
+18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC or Delivery.SDSA_China_PoC on a contributing study or supporting delivery. Follow submission.md.
+19. When the user asks which team supported a submission, a team is Person.Team_Lead_Name. Return distinct team lead names only. Do not list every person who worked on the submission."""
 
     user = f"""Schema:
 {schema_text}
@@ -1317,6 +1396,16 @@ def _format_local_answer(question: str, rows: list[dict[str, Any]]) -> str | Non
             if chinese
             else f"Found **{count}** {noun} in China who contributed. Contribution type is in the table below."
         )
+
+    if set(fields) == {"Team_Lead"}:
+        leads = [str(row.get("Team_Lead")) for row in rows if row.get("Team_Lead")]
+        count = len(leads)
+        shown = ", ".join(f"**{name} team**" for name in leads[:20])
+        if chinese:
+            more = "" if count <= 20 else "其余团队见下方表格。"
+            return f"找到 **{count}** 个团队：{shown}。{more}"
+        more = "" if count <= 20 else " The table below lists every team."
+        return f"Found **{count}** teams: {shown}.{more}"
     return None
 
 

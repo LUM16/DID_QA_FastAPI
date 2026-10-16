@@ -40,6 +40,7 @@ You can answer questions about Study, Delivery, DID, SDSL, Group Lead, TA Lead, 
 14. In answers, call the four task types CSR, SDA, STD, and eSub. Never show raw property names. Omit a type when its value is 0.
 15. For studies that contribute to a submission, split the submission description into keywords. Match when `Submission.Project_Name` contains every keyword, or when `Submission.Name` contains every keyword. Reach studies only through `(Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission)` or `(Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission)`. DSP category is `Study_Info.DSP_Flag`.
 16. For who in China contributed to a submission, use three paths. A delivery contributor is a `Person` who `WORKS_ON` a `Delivery` that `SUPPORT_SUBMISSION` the submission, and that person `FROM_SITE` a `Site` whose `Name` or `Category` is `China`. A study SDSL counts when `Study.SDSL` is that kind of China-site person on a contributing study. A China PoC counts when `Study.SDSA_China_PoC` or `Delivery.SDSA_China_PoC` is non-blank on a contributing study or supporting delivery. Do not put the China site filter in an `OPTIONAL MATCH`.
+17. When the user asks which team, the team is `Person.Team_Lead_Name`. For teams that supported a submission, take that property from the China contributors above and return distinct team lead names. Do not list every participant. Answer with the team lead name, for example `Jane Smith team`.
 
 ## Example Usage Strategy
 
