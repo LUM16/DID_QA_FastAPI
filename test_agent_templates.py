@@ -147,6 +147,22 @@ class AgentTemplateTests(unittest.TestCase):
         self.assertIn("'Delivery contributor'", people)
         self.assertNotIn("AS Team_Lead", people)
 
+    def test_submission_hours_match_project_name_or_name(self) -> None:
+        cypher = agent.template_cypher(
+            "how many hours were spent on Litfulo vitiligo submission by each individual"
+        )
+        self.assertIsNotNone(cypher)
+        self.assertIn("sub.Project_Name", cypher)
+        self.assertIn("sub.Name", cypher)
+        self.assertIn('CONTAINS "LITFULO"', cypher)
+        self.assertIn('CONTAINS "VITILIGO"', cypher)
+        self.assertNotIn("LITFULO VITILIGO", cypher)
+        self.assertIn("[:TIME_ON]->", cypher)
+        self.assertIn("DIDN_Month", cypher)
+        self.assertIn("DID0_Month", cypher)
+        self.assertNotIn("all(kw IN kws", cypher)
+        self.assertNotIn("$", cypher)
+
 
 if __name__ == "__main__":
     unittest.main()

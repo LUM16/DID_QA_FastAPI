@@ -797,6 +797,14 @@ _CHINA_SUBMISSION_TEAM_RE = re.compile(
     re.IGNORECASE,
 )
 _SUBMISSION_KEYWORD_SKIP = {"the", "a", "an", "and", "or", "of", "for", "to"}
+_SUBMISSION_HOURS_RE = re.compile(
+    r"(?:\bhours?\b|小时|工时).{0,100}?(?:on|for)\s+(.+?)\s+submission\b.{0,80}?"
+    r"(?:\beach\b|\bevery\b|\bindividual\b|每个人|每人)"
+    r"|"
+    r"(?:\beach\b|\bevery\b|\bindividual\b|每个人|每人).{0,80}?"
+    r"(?:\bhours?\b|小时|工时).{0,80}?(?:on|for)\s+(.+?)\s+submission\b",
+    re.IGNORECASE,
+)
 
 
 def _submission_keywords(text: str) -> list[str]:
@@ -962,8 +970,39 @@ ORDER BY Person, Contribution
 LIMIT 50"""
 
 
+def _submission_hours_cypher(question: str) -> str | None:
+    """Hours per person. Submission keywords match Project_Name or Name."""
+    match = _SUBMISSION_HOURS_RE.search(question or "")
+    if not match:
+        return None
+    phrase = next(group for group in match.groups() if group)
+    keywords = [
+        word
+        for word in _submission_keywords(phrase)
+        if word.lower() not in {"this", "that", "same"}
+    ]
+    if not keywords:
+        return None
+    return f"""{_submission_filter(keywords)}
+CALL {{
+  WITH sub
+  MATCH (p:Person)-[t:TIME_ON]->(:DIDN_Month)-[:BELONGS_TO]->(:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+  RETURN p.Name AS Person, coalesce(toFloat(t.Hour), 0.0) AS Hours
+  UNION ALL
+  WITH sub
+  MATCH (p:Person)-[t:TIME_ON]->(:DID0_Month)-[:BELONGS_TO]->(:DID0)-[:SUPPORT_SUBMISSION]->(sub)
+  RETURN p.Name AS Person, coalesce(toFloat(t.Hour), 0.0) AS Hours
+}}
+RETURN Person, sum(Hours) AS Hours
+ORDER BY Hours DESC, Person
+LIMIT 200"""
+
+
 def template_cypher(question: str) -> str | None:
     """Return deterministic Cypher for high-frequency simple queries."""
+    hours_cypher = _submission_hours_cypher(question)
+    if hours_cypher:
+        return hours_cypher
     team_cypher = _china_submission_team_cypher(question)
     if team_cypher:
         return team_cypher
@@ -1049,7 +1088,7 @@ Rules:
 13. WORKS_ON has no Task_Num_Total.
 14. If the user asks about tasks, return one row per Delivery with aliases Delivery, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date, CSR, SDA, STD, eSub. CSR/SDA/STD/eSub must be the four WORKS_ON task totals. Do not return only SUM() as a single total. Do not alias columns to raw names like CSR_Task_Num_Total.
 15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.
-16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string.
+16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string. Do not match Name alone. This same OR applies to hours questions.
 17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern.
 18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC or Delivery.SDSA_China_PoC on a contributing study or supporting delivery. Follow submission.md.
 19. When the user asks which team supported a submission, a team is Person.Team_Lead_Name. Return distinct team lead names only. Do not list every person who worked on the submission."""
@@ -1406,6 +1445,17 @@ def _format_local_answer(question: str, rows: list[dict[str, Any]]) -> str | Non
             return f"找到 **{count}** 个团队：{shown}。{more}"
         more = "" if count <= 20 else " The table below lists every team."
         return f"Found **{count}** teams: {shown}.{more}"
+
+    if set(fields) == {"Person", "Hours"}:
+        count = len(rows)
+        total = sum(float(row.get("Hours") or 0) for row in rows)
+        noun = "person" if count == 1 else "people"
+        if chinese:
+            return f"共 **{count}** 人，合计 **{total:g}** 小时。每人小时数见下方表格。"
+        return (
+            f"Found **{count}** {noun}. Total hours: **{total:g}**. "
+            "Hours for each person are in the table below."
+        )
     return None
 
 

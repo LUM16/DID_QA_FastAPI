@@ -2,7 +2,7 @@
 
 > Use these as few-shot examples for DID Agent Text-to-Cypher. Replace the keyword literals with the words from the user's question.
 
-Search rule: split the submission description into keywords. A Submission matches when `Project_Name` contains every keyword, or when `Name` contains every keyword. Compare with `toUpper`. Do not require both fields to match.
+Search rule: split the submission description into keywords. A Submission matches when `Project_Name` contains every keyword, or when `Name` contains every keyword. Compare with `toUpper`. Do not require both fields to match. Do not match `Name` alone. Hours questions use this same match.
 
 A study contributes to a submission through either path:
 
