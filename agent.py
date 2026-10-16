@@ -780,21 +780,25 @@ _SUBMISSION_STUDY_RE = re.compile(
     r".{0,40}?to\s+(.+?)\s+submission\b",
     re.IGNORECASE,
 )
+_CHINA_SUBMISSION_CONTRIBUTOR_RE = re.compile(
+    r"(?:who|which|哪些|谁).{0,80}?(?:\bchina\b|中国).{0,80}?"
+    r"(?:contribut\w*|work\w*|support\w*|参与|贡献).{0,40}?"
+    r"(?:\bto\b|\bfor\b|\bof\b|了)?\s*(.+?)\s+submission\b",
+    re.IGNORECASE,
+)
 _SUBMISSION_KEYWORD_SKIP = {"the", "a", "an", "and", "or", "of", "for", "to"}
 
 
-def _submission_study_cypher(question: str) -> str | None:
-    """Studies contributing to a submission, matched by separate keywords."""
-    match = _SUBMISSION_STUDY_RE.search(question or "")
-    if not match:
-        return None
+def _submission_keywords(text: str) -> list[str]:
     keywords: list[str] = []
-    for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9+-]*", match.group(1)):
+    for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9+-]*", text or ""):
         if word.lower() in _SUBMISSION_KEYWORD_SKIP:
             continue
         keywords.append(word.upper())
-    if not keywords:
-        return None
+    return keywords
+
+
+def _submission_filter(keywords: list[str]) -> str:
     project_checks = " AND ".join(
         f"toUpper(sub.Project_Name) CONTAINS {_quote(word)}" for word in keywords
     )
@@ -804,7 +808,18 @@ def _submission_study_cypher(question: str) -> str | None:
     return f"""MATCH (sub:Submission)
 WHERE (sub.Project_Name IS NOT NULL AND {project_checks})
    OR (sub.Name IS NOT NULL AND {name_checks})
-WITH DISTINCT sub
+WITH DISTINCT sub"""
+
+
+def _submission_study_cypher(question: str) -> str | None:
+    """Studies contributing to a submission, matched by separate keywords."""
+    match = _SUBMISSION_STUDY_RE.search(question or "")
+    if not match:
+        return None
+    keywords = _submission_keywords(match.group(1))
+    if not keywords:
+        return None
+    return f"""{_submission_filter(keywords)}
 MATCH (s:Study)
 OPTIONAL MATCH (s)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
 OPTIONAL MATCH (s)-[:HAS_DID0]->(did0:DID0)-[:SUPPORT_SUBMISSION]->(sub)
@@ -816,8 +831,67 @@ ORDER BY Study
 LIMIT 50"""
 
 
+def _china_submission_contributor_cypher(question: str) -> str | None:
+    """China contributors to a submission: China-site delivery staff, China SDSL, or China PoC."""
+    match = _CHINA_SUBMISSION_CONTRIBUTOR_RE.search(question or "")
+    if not match:
+        return None
+    keywords = _submission_keywords(match.group(1))
+    if not keywords:
+        return None
+    submission = _submission_filter(keywords)
+    china_site = """(
+  toUpper(trim(site.Name)) = 'CHINA'
+  OR toUpper(trim(coalesce(site.Category, ''))) = 'CHINA'
+)"""
+    return f"""{submission}
+MATCH (p:Person)-[:WORKS_ON]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+MATCH (p)-[:FROM_SITE]->(site:Site)
+WHERE {china_site}
+WITH p, collect(DISTINCT d.Name) AS Evidence
+RETURN p.Name AS Person, p.NTID AS NTID, 'Delivery contributor' AS Contribution, Evidence
+UNION
+{submission}
+MATCH (s:Study)
+OPTIONAL MATCH (s)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+OPTIONAL MATCH (s)-[:HAS_DID0]->(did0:DID0)-[:SUPPORT_SUBMISSION]->(sub)
+WITH s, d, did0
+WHERE (d IS NOT NULL OR did0 IS NOT NULL)
+  AND s.SDSL IS NOT NULL AND trim(s.SDSL) <> ''
+MATCH (p:Person)-[:FROM_SITE]->(site:Site)
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSL)), ' ', '')
+  AND {china_site}
+WITH p, collect(DISTINCT s.Name) AS Evidence
+RETURN p.Name AS Person, p.NTID AS NTID, 'Study SDSL' AS Contribution, Evidence
+UNION
+{submission}
+MATCH (d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+WHERE d.SDSA_China_PoC IS NOT NULL AND trim(d.SDSA_China_PoC) <> ''
+OPTIONAL MATCH (p:Person)
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(d.SDSA_China_PoC)), ' ', '')
+WITH coalesce(p.Name, trim(d.SDSA_China_PoC)) AS Person, p.NTID AS NTID, collect(DISTINCT d.Name) AS Evidence
+RETURN Person, NTID, 'China PoC' AS Contribution, Evidence
+UNION
+{submission}
+MATCH (s:Study)
+OPTIONAL MATCH (s)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+OPTIONAL MATCH (s)-[:HAS_DID0]->(did0:DID0)-[:SUPPORT_SUBMISSION]->(sub)
+WITH s, d, did0
+WHERE (d IS NOT NULL OR did0 IS NOT NULL)
+  AND s.SDSA_China_PoC IS NOT NULL AND trim(s.SDSA_China_PoC) <> ''
+OPTIONAL MATCH (p:Person)
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSA_China_PoC)), ' ', '')
+WITH coalesce(p.Name, trim(s.SDSA_China_PoC)) AS Person, p.NTID AS NTID, collect(DISTINCT s.Name) AS Evidence
+RETURN Person, NTID, 'China PoC' AS Contribution, Evidence
+ORDER BY Person, Contribution
+LIMIT 50"""
+
+
 def template_cypher(question: str) -> str | None:
     """Return deterministic Cypher for high-frequency simple queries."""
+    china_cypher = _china_submission_contributor_cypher(question)
+    if china_cypher:
+        return china_cypher
     submission_cypher = _submission_study_cypher(question)
     if submission_cypher:
         return submission_cypher
@@ -898,7 +972,8 @@ Rules:
 14. If the user asks about tasks, return one row per Delivery with aliases Delivery, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date, CSR, SDA, STD, eSub. CSR/SDA/STD/eSub must be the four WORKS_ON task totals. Do not return only SUM() as a single total. Do not alias columns to raw names like CSR_Task_Num_Total.
 15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.
 16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string.
-17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern."""
+17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern.
+18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC or Delivery.SDSA_China_PoC on a contributing study or supporting delivery. Follow submission.md."""
 
     user = f"""Schema:
 {schema_text}
@@ -942,7 +1017,8 @@ Rules:
 8. Never use CREATE/MERGE/DELETE/SET/REMOVE/DROP or other write operations.
 9. Never use Task_Num_Total.
 10. Task and delivery questions must return one row per Delivery, not a single total.
-11. Studies reach a Submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not add HAS_SDTM, HAS_ADAM, or HAS_TLF on that path. Match submission keywords separately with toUpper CONTAINS on Project_Name, or separately on Name. DSP category is Study_Info.DSP_Flag."""
+11. Studies reach a Submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not add HAS_SDTM, HAS_ADAM, or HAS_TLF on that path. Match submission keywords separately with toUpper CONTAINS on Project_Name, or separately on Name. DSP category is Study_Info.DSP_Flag.
+12. China contributors are China-site people on supporting deliveries, a contributing study's SDSL when that person is from the China site, or a non-blank SDSA_China_PoC. Match the China site with MATCH (Person)-[:FROM_SITE]->(Site), not inside OPTIONAL MATCH."""
 
     user = f"""Schema:
 {schema_text}
@@ -1230,6 +1306,16 @@ def _format_local_answer(question: str, rows: list[dict[str, Any]]) -> str | Non
             f"找到 **{count}** 个相关 study，DSP category 见下方表格。"
             if chinese
             else f"Found **{count}** {noun}. DSP category is in the table below."
+        )
+
+    if {"Person", "Contribution"} <= set(fields):
+        people = {row.get("Person") for row in rows if row.get("Person")}
+        count = len(people)
+        noun = "person" if count == 1 else "people"
+        return (
+            f"找到 **{count}** 位中国参与者，参与方式见下方表格。"
+            if chinese
+            else f"Found **{count}** {noun} in China who contributed. Contribution type is in the table below."
         )
     return None
 

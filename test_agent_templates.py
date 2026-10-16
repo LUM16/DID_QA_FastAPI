@@ -106,6 +106,30 @@ class AgentTemplateTests(unittest.TestCase):
         )
         self.assertEqual(result["rows"], rows)
 
+    def test_china_submission_contributors_use_site_sdsl_and_poc(self) -> None:
+        cypher = agent.template_cypher(
+            "Who in China contributed to Litfulo vitiligo submission"
+        )
+        self.assertIsNotNone(cypher)
+        self.assertIn('CONTAINS "LITFULO"', cypher)
+        self.assertIn('CONTAINS "VITILIGO"', cypher)
+        self.assertNotIn("LITFULO VITILIGO", cypher)
+        self.assertIn("[:WORKS_ON]->(d:Delivery)-[:SUPPORT_SUBMISSION]", cypher)
+        self.assertIn("[:FROM_SITE]->(site:Site)", cypher)
+        self.assertIn("toUpper(trim(site.Name)) = 'CHINA'", cypher)
+        self.assertIn("s.SDSL", cypher)
+        self.assertIn("d.SDSA_China_PoC", cypher)
+        self.assertIn("s.SDSA_China_PoC", cypher)
+        self.assertIn("'Delivery contributor'", cypher)
+        self.assertIn("'Study SDSL'", cypher)
+        self.assertIn("'China PoC'", cypher)
+        self.assertNotIn("OPTIONAL MATCH (p)-[:FROM_SITE]", cypher)
+        study_cypher = agent.template_cypher(
+            "Please list the studies that contribute to Litfulo vitiligo submission and show study DSP category"
+        )
+        self.assertIn("si.DSP_Flag AS DSP_Category", study_cypher)
+        self.assertNotIn("SDSA_China_PoC", study_cypher)
+
 
 if __name__ == "__main__":
     unittest.main()
