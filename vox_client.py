@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import os
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from importlib import import_module
-from typing import Any
+from pathlib import Path
+import re
+import tempfile
+from typing import Any, Iterator
 
 import requests
 from openai import OpenAI
@@ -24,6 +30,9 @@ _client_cache: dict[str, Any] = {
     "base": None,
     "token": None,
 }
+_llm_context: ContextVar[tuple[str, str | None]] = ContextVar(
+    "llm_context", default=("vox", None)
+)
 
 
 def empty_usage() -> dict[str, int]:
@@ -273,6 +282,59 @@ def clear_llm_client_cache() -> None:
     _client_cache.update({"client": None, "model": None, "base": None, "token": None})
 
 
+@contextmanager
+def use_llm_provider(provider: str | None, github_token: str | None = None) -> Iterator[None]:
+    selected_provider = provider or "vox"
+    if selected_provider not in {"vox", "github_copilot"}:
+        raise ValueError(f"Unsupported LLM provider: {selected_provider}")
+    if selected_provider == "github_copilot" and not github_token:
+        raise ValueError("GitHub Copilot requires a GitHub token.")
+    context_token = _llm_context.set((selected_provider, github_token))
+    try:
+        yield
+    finally:
+        _llm_context.reset(context_token)
+
+
+def _copilot_base_directory(github_token: str) -> str:
+    root = Path(os.environ.get("COPILOT_STORAGE_DIR", tempfile.gettempdir())) / "did-insight-copilot"
+    tenant_id = hashlib.sha256(github_token.encode("utf-8")).hexdigest()
+    directory = root / tenant_id
+    directory.mkdir(parents=True, exist_ok=True)
+    return str(directory)
+
+
+def _copilot_error_detail(exc: Exception, github_token: str) -> str:
+    detail = str(exc).replace(github_token, "[redacted]")
+    detail = re.sub(r"\b(?:github_pat|ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]+\b", "[redacted]", detail)
+    detail = re.sub(r"(?i)(authorization:\s*bearer\s+)\S+", r"\1[redacted]", detail)
+    return " ".join(detail.split())[:500] or type(exc).__name__
+
+
+async def _chat_with_github_copilot(system: str, user: str, github_token: str) -> str:
+    from copilot import CopilotClient
+
+    load_env()
+    model = _env("COPILOT_MODEL") or "auto"
+    async with CopilotClient(
+        mode="empty",
+        base_directory=_copilot_base_directory(github_token),
+        use_logged_in_user=False,
+        session_idle_timeout_seconds=300,
+    ) as client:
+        async with await client.create_session(
+            model=model,
+            github_token=github_token,
+            available_tools=[],
+            system_message={"mode": "replace", "content": system},
+        ) as session:
+            response = await session.send_and_wait(user)
+    content = getattr(getattr(response, "data", None), "content", None)
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("GitHub Copilot returned an empty response.")
+    return content.strip()
+
+
 def models_vox_genai() -> list[str]:
     client, _ = build_llm_client()
     response = client.models.list()
@@ -296,6 +358,19 @@ def chat(
     temperature: float = 0.1,
     max_tokens: int | None = None,
 ) -> tuple[str, dict[str, int]]:
+    provider, github_token = _llm_context.get()
+    if provider == "github_copilot":
+        try:
+            return asyncio.run(
+                _chat_with_github_copilot(system, user, str(github_token))
+            ), empty_usage()
+        except Exception as exc:
+            log.exception("GitHub Copilot SDK request failed: %s", type(exc).__name__)
+            raise RuntimeError(
+                "GitHub Copilot request failed: "
+                f"{_copilot_error_detail(exc, str(github_token))}"
+            ) from exc
+
     client, model = build_llm_client()
     messages = [
         {"role": "system", "content": system},

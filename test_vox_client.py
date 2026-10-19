@@ -108,6 +108,19 @@ class VoxClientTests(unittest.TestCase):
 
             self.assertEqual(mock_openai.call_count, 2)
 
+    def test_copilot_provider_context_is_scoped_to_request(self) -> None:
+        self.assertEqual(vox_client._llm_context.get(), ("vox", None))
+
+        with vox_client.use_llm_provider("github_copilot", "token-a"):
+            self.assertEqual(vox_client._llm_context.get(), ("github_copilot", "token-a"))
+
+        self.assertEqual(vox_client._llm_context.get(), ("vox", None))
+
+    def test_copilot_provider_requires_token(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires a GitHub token"):
+            with vox_client.use_llm_provider("github_copilot"):
+                pass
+
 
 if __name__ == "__main__":
     unittest.main()

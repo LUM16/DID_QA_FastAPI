@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from agent import ask as agent_ask
 from agent import _read_doc
 from example_memory import get_memory
+from github_token_vault import retrieve_copilot_token, save_copilot_token
 from match_person import apply_person_choices, match_person_in_prompt
 from export import to_csv, to_json
 from neo4j_client import (
@@ -31,8 +32,9 @@ from neo4j_client import (
     raise_limit,
     run_cypher_with_meta,
 )
-from vox_client import vox_health
+from vox_client import use_llm_provider, vox_health
 from planning_api import router as planning_router
+from posit_connect_identity import current_ntid
 
 STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 MAX_EXPORT_ROWS = 20000
@@ -71,6 +73,7 @@ class QueryBody(BaseModel):
     question: str
     history: list[dict[str, Any]] = Field(default_factory=list)
     provider: str | None = None
+    github_token: str | None = Field(default=None, exclude=True)
     refresh_schema: bool = False
     # Disambiguation round-trip: the client echoes back the match result it was
     # given plus the user's picks, so the roster does not have to be re-matched.
@@ -91,6 +94,10 @@ class FeedbackBody(BaseModel):
 class ImproveBody(BaseModel):
     provider: str | None = None
     force: bool = False
+
+
+class CopilotTokenBody(BaseModel):
+    github_token: str = Field(min_length=1, exclude=True)
 
 
 class ExportBody(BaseModel):
@@ -141,7 +148,9 @@ def _viz_payload(visualization: dict[str, Any] | None) -> dict[str, Any] | None:
     return {"kind": kind, "chart": chart}
 
 
-def insight_payload(result: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
+def insight_payload(
+    result: dict[str, Any], elapsed_ms: int, provider: str = "vox"
+) -> dict[str, Any]:
     load_env()
     rows = jsonable(result.get("rows") or [])
     columns = result.get("columns") or (
@@ -186,8 +195,12 @@ def insight_payload(result: dict[str, Any], elapsed_ms: int) -> dict[str, Any]:
         "viz": _viz_payload(result.get("visualization")),
         "case_id": result.get("case_id"),
         "confidence": confidence,
-        "provider": "vox",
-        "model": os.environ.get("VOX_MODEL", "gpt-4o"),
+        "provider": provider,
+        "model": (
+            os.environ.get("COPILOT_MODEL", "auto")
+            if provider == "github_copilot"
+            else os.environ.get("VOX_MODEL", "gpt-4o")
+        ),
         "fallback_used": False,
         "attempts": attempts,
         "elapsed_ms": elapsed_ms,
@@ -282,11 +295,51 @@ def _unmatched_mentions(match: dict[str, Any]) -> list[str]:
     return [str(item) for item in (match.get("unmatched") or []) if str(item).strip()]
 
 
+def _request_ntid(request: Request) -> str:
+    ntid = current_ntid(request.headers)
+    if not ntid:
+        raise HTTPException(
+            status_code=400,
+            detail="Your Posit Connect NTID is unavailable; token saving is not available.",
+        )
+    return ntid
+
+
+@app.get("/api/copilot/token")
+def copilot_token_status(request: Request) -> dict[str, Any]:
+    ntid = _request_ntid(request)
+    try:
+        retrieve_copilot_token(ntid)
+    except RuntimeError as exc:
+        if str(exc) == "No GitHub Copilot token is saved for this NTID.":
+            return {"saved": False, "ntid": ntid}
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"saved": True, "ntid": ntid}
+
+
+@app.post("/api/copilot/token")
+def save_token(body: CopilotTokenBody, request: Request) -> dict[str, Any]:
+    try:
+        ntid = _request_ntid(request)
+        save_copilot_token(ntid, body.github_token)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"saved": True, "ntid": ntid}
+
+
 
 @app.post("/api/query")
 def query(body: QueryBody, request: Request) -> dict[str, Any]:
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
+    requested_provider = body.provider or "vox"
+    provider = "github_copilot" if requested_provider == "github_copilot" else "vox"
+    github_token = (body.github_token or "").strip() or None
+    if provider == "github_copilot" and not github_token:
+        try:
+            github_token = retrieve_copilot_token(_request_ntid(request))
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     started = time.perf_counter()
 
     # Step 1 - normalise person mentions to official roster names.
@@ -325,11 +378,12 @@ def query(body: QueryBody, request: Request) -> dict[str, Any]:
     question = (match.get("prompt") or body.question).strip()
     try:
         schema = get_schema() if body.refresh_schema else None
-        result = agent_ask(question, history=body.history, schema=schema)
+        with use_llm_provider(provider, github_token):
+            result = agent_ask(question, history=body.history, schema=schema)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    payload = insight_payload(result, elapsed_ms)
+    payload = insight_payload(result, elapsed_ms, provider)
     payload["question"] = question
     payload["person_match"] = _person_payload(match)
     log_query_timings(payload)

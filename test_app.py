@@ -7,7 +7,15 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
-from app import FeedbackBody, feedback, insight_payload, log_query_timings
+from app import (
+    CopilotTokenBody,
+    FeedbackBody,
+    copilot_token_status,
+    feedback,
+    insight_payload,
+    log_query_timings,
+    save_token,
+)
 
 
 class InsightPayloadTests(unittest.TestCase):
@@ -67,6 +75,30 @@ class InsightPayloadTests(unittest.TestCase):
     def test_positive_feedback_rejects_negative_reason(self) -> None:
         with self.assertRaisesRegex(HTTPException, "Positive feedback"):
             feedback(FeedbackBody(case_id=42, vote=1, reason="wrong_data"))
+
+    @patch("app.retrieve_copilot_token", return_value="secret-token")
+    @patch("app.current_ntid", return_value="user.name")
+    def test_copilot_status_does_not_return_saved_token(
+        self, mock_ntid, mock_retrieve
+    ) -> None:
+        result = copilot_token_status(Mock(headers={}))
+
+        self.assertEqual(result, {"saved": True, "ntid": "user.name"})
+        mock_ntid.assert_called_once()
+        mock_retrieve.assert_called_once_with("user.name")
+
+    @patch("app.save_copilot_token")
+    @patch("app.current_ntid", return_value="user.name")
+    def test_save_copilot_token_uses_current_posit_ntid(
+        self, mock_ntid, mock_save
+    ) -> None:
+        result = save_token(
+            CopilotTokenBody(github_token="secret-token"), Mock(headers={})
+        )
+
+        self.assertEqual(result, {"saved": True, "ntid": "user.name"})
+        mock_ntid.assert_called_once()
+        mock_save.assert_called_once_with("user.name", "secret-token")
 
 
 if __name__ == "__main__":

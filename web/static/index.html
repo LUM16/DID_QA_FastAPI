@@ -169,8 +169,14 @@
       <option value="ark">ark (Volcengine)</option>
       <option value="vox" selected>vox (Voxpy/OAuth)</option>
       <option value="openai">openai (compat endpoint)</option>
+      <option value="github_copilot">GitHub Copilot</option>
     </select>
   </label>
+  <label id="copilot-token-wrap" class="muted" hidden>GitHub token
+    <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." />
+  </label>
+  <button id="copilot-save" hidden type="button">Save token</button>
+  <span id="copilot-status" class="muted" hidden></span>
   <button id="btn-stats" title="Learning statistics">Stats</button>
   <button id="btn-improve" title="Distill failures into rules">Self-improve</button>
   <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
@@ -809,6 +815,49 @@ async function download(cypher,fmt){if(!cypher){toast('No query available to exp
 
 const KEEP_ORIGINAL='__keep_original__';
 
+let copilotTokenSaved=false;
+function selectedProvider(){return $('#provider').value;}
+function copilotToken(){return $('#copilot-token').value.trim();}
+function queryProviderPayload(){
+  const provider=selectedProvider();
+  return provider==='github_copilot'&&copilotToken() ? {provider,github_token:copilotToken()} : {provider};
+}
+async function refreshCopilotTokenStatus(){
+  const status=$('#copilot-status');
+  status.textContent='Checking saved token…';
+  try{
+    const result=await api('/api/copilot/token');
+    copilotTokenSaved=!!result.saved;
+    status.textContent=result.saved?`Saved token ready (${result.ntid})`:'No saved token';
+  }catch(e){
+    copilotTokenSaved=false;
+    status.textContent='Token vault unavailable';
+    status.title=e.message;
+  }
+}
+function syncCopilotControls(){
+  const active=selectedProvider()==='github_copilot';
+  $('#copilot-token-wrap').hidden=!active;
+  $('#copilot-save').hidden=!active;
+  $('#copilot-status').hidden=!active;
+  if(active) refreshCopilotTokenStatus();
+  if(active&&!copilotToken()) $('#copilot-token').focus();
+}
+$('#provider').onchange=syncCopilotControls;
+$('#copilot-save').onclick=async()=>{
+  const token=copilotToken();
+  if(!token){$('#copilot-token').focus();toast('Enter a GitHub token first.');return;}
+  const button=$('#copilot-save');button.disabled=true;
+  try{
+    const result=await api('/api/copilot/token',{github_token:token});
+    $('#copilot-token').value='';copilotTokenSaved=true;
+    $('#copilot-status').textContent=`Saved token ready (${result.ntid})`;
+    toast('GitHub Copilot token saved.');
+  }catch(e){toast(`Token save failed: ${e.message}`);}
+  finally{button.disabled=false;}
+};
+syncCopilotControls();
+
 function renderPersonChoice(data, originalQuestion, provider){
   // Three kinds of round-trip:
   //   1. nothing matched        -> continue with the original wording, or abort
@@ -821,6 +870,7 @@ function renderPersonChoice(data, originalQuestion, provider){
     thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
     try{
       const r=await api('/api/query',Object.assign({question:originalQuestion,history:conv.slice(-12),provider,
+        ...(provider==='github_copilot'?{github_token:copilotToken()}:{}),
         person_match:data.person_match},extra));
       thinking.remove();
       if(r.needs_person_choice){renderPersonChoice(r,originalQuestion,provider);return;}
@@ -903,9 +953,9 @@ async function ask(preset){
   addUser(q); recordHistory(q);
   const thinking=document.createElement('div');thinking.className='msg ai';
   thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
-  const provider=$('#provider').value||null;
+  const provider=selectedProvider();
   try{
-    const r=await api('/api/query',{question:q,history:conv.slice(-12),provider});
+    const r=await api('/api/query',Object.assign({question:q,history:conv.slice(-12)},queryProviderPayload()));
     thinking.remove();
     if(r.needs_person_choice){renderPersonChoice(r,q,provider);return;}
     showResolvedQuestion(r, q);
