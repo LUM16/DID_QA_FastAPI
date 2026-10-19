@@ -100,6 +100,27 @@ class InsightPayloadTests(unittest.TestCase):
         mock_ntid.assert_called_once()
         mock_save.assert_called_once_with("user.name", "secret-token")
 
+    @patch("app.retrieve_copilot_token", return_value="secret-token")
+    @patch("app.current_ntid", return_value="")
+    def test_copilot_status_uses_browser_ntid_when_cookie_is_not_forwarded(
+        self, mock_ntid, mock_retrieve
+    ) -> None:
+        result = copilot_token_status(
+            Mock(headers={}), posit_connect_ntid="user.name"
+        )
+
+        self.assertEqual(result, {"saved": True, "ntid": "user.name"})
+        mock_ntid.assert_called_once()
+        mock_retrieve.assert_called_once_with("user.name")
+
+    def test_page_uses_browser_posit_connect_identity_lookup(self) -> None:
+        with open("web/static/index.html", encoding="utf-8") as source_file:
+            source = source_file.read()
+
+        self.assertIn("fetch('/__api__/me'", source)
+        self.assertIn("credentials:'same-origin'", source)
+        self.assertIn("posit_connect_ntid", source)
+
 
 if __name__ == "__main__":
     unittest.main()

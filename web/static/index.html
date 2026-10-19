@@ -816,17 +816,33 @@ async function download(cypher,fmt){if(!cypher){toast('No query available to exp
 const KEEP_ORIGINAL='__keep_original__';
 
 let copilotTokenSaved=false;
+let positConnectNtid='';
 function selectedProvider(){return $('#provider').value;}
 function copilotToken(){return $('#copilot-token').value.trim();}
+async function resolvePositConnectNtid(){
+  const xsrfCookie=document.cookie.split('; ').find(item=>item.startsWith('RSC-XSRF-legacy='));
+  const xsrfToken=xsrfCookie?xsrfCookie.slice('RSC-XSRF-legacy='.length):'';
+  try{
+    const response=await fetch('/__api__/me',{credentials:'same-origin',headers:{Accept:'application/json',...(xsrfToken?{'X-RSC-XSRF':xsrfToken}:{})},cache:'no-store'});
+    if(!response.ok){positConnectNtid='';return '';}
+    const payload=await response.json();
+    const profile=payload?.profile||payload?.user||payload||{};
+    positConnectNtid=String(profile?.username||payload?.username||'').trim();
+  }catch(e){positConnectNtid='';}
+  return positConnectNtid;
+}
+function copilotIdentityPayload(){return positConnectNtid?{posit_connect_ntid:positConnectNtid}:{};}
 function queryProviderPayload(){
   const provider=selectedProvider();
-  return provider==='github_copilot'&&copilotToken() ? {provider,github_token:copilotToken()} : {provider};
+  return provider==='github_copilot'&&copilotToken() ? {provider,github_token:copilotToken(),...copilotIdentityPayload()} : {provider,...copilotIdentityPayload()};
 }
 async function refreshCopilotTokenStatus(){
   const status=$('#copilot-status');
   status.textContent='Checking saved token…';
   try{
-    const result=await api('/api/copilot/token');
+    await resolvePositConnectNtid();
+    const query=positConnectNtid?`?posit_connect_ntid=${encodeURIComponent(positConnectNtid)}`:'';
+    const result=await api(`/api/copilot/token${query}`);
     copilotTokenSaved=!!result.saved;
     status.textContent=result.saved?`Saved token ready (${result.ntid})`:'No saved token';
   }catch(e){
@@ -849,7 +865,8 @@ $('#copilot-save').onclick=async()=>{
   if(!token){$('#copilot-token').focus();toast('Enter a GitHub token first.');return;}
   const button=$('#copilot-save');button.disabled=true;
   try{
-    const result=await api('/api/copilot/token',{github_token:token});
+    await resolvePositConnectNtid();
+    const result=await api('/api/copilot/token',{github_token:token,...copilotIdentityPayload()});
     $('#copilot-token').value='';copilotTokenSaved=true;
     $('#copilot-status').textContent=`Saved token ready (${result.ntid})`;
     toast('GitHub Copilot token saved.');
@@ -870,7 +887,7 @@ function renderPersonChoice(data, originalQuestion, provider){
     thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
     try{
       const r=await api('/api/query',Object.assign({question:originalQuestion,history:conv.slice(-12),provider,
-        ...(provider==='github_copilot'?{github_token:copilotToken()}:{}),
+        ...(provider==='github_copilot'?{github_token:copilotToken(),...copilotIdentityPayload()}:{}),
         person_match:data.person_match},extra));
       thinking.remove();
       if(r.needs_person_choice){renderPersonChoice(r,originalQuestion,provider);return;}
@@ -955,6 +972,7 @@ async function ask(preset){
   thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
   const provider=selectedProvider();
   try{
+    if(provider==='github_copilot') await resolvePositConnectNtid();
     const r=await api('/api/query',Object.assign({question:q,history:conv.slice(-12)},queryProviderPayload()));
     thinking.remove();
     if(r.needs_person_choice){renderPersonChoice(r,q,provider);return;}

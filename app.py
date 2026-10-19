@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from agent import ask as agent_ask
 from agent import _read_doc
 from example_memory import get_memory
-from github_token_vault import retrieve_copilot_token, save_copilot_token
+from github_token_vault import normalize_ntid, retrieve_copilot_token, save_copilot_token
 from match_person import apply_person_choices, match_person_in_prompt
 from export import to_csv, to_json
 from neo4j_client import (
@@ -74,6 +74,7 @@ class QueryBody(BaseModel):
     history: list[dict[str, Any]] = Field(default_factory=list)
     provider: str | None = None
     github_token: str | None = Field(default=None, exclude=True)
+    posit_connect_ntid: str | None = Field(default=None, exclude=True)
     refresh_schema: bool = False
     # Disambiguation round-trip: the client echoes back the match result it was
     # given plus the user's picks, so the roster does not have to be re-matched.
@@ -98,6 +99,7 @@ class ImproveBody(BaseModel):
 
 class CopilotTokenBody(BaseModel):
     github_token: str = Field(min_length=1, exclude=True)
+    posit_connect_ntid: str | None = Field(default=None, exclude=True)
 
 
 class ExportBody(BaseModel):
@@ -295,19 +297,24 @@ def _unmatched_mentions(match: dict[str, Any]) -> list[str]:
     return [str(item) for item in (match.get("unmatched") or []) if str(item).strip()]
 
 
-def _request_ntid(request: Request) -> str:
-    ntid = current_ntid(request.headers)
+def _request_ntid(request: Request, browser_ntid: str | None = None) -> str:
+    ntid = current_ntid(request.headers) or (browser_ntid or "").strip()
     if not ntid:
         raise HTTPException(
             status_code=400,
             detail="Your Posit Connect NTID is unavailable; token saving is not available.",
         )
-    return ntid
+    try:
+        return normalize_ntid(ntid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/copilot/token")
-def copilot_token_status(request: Request) -> dict[str, Any]:
-    ntid = _request_ntid(request)
+def copilot_token_status(
+    request: Request, posit_connect_ntid: str | None = Query(default=None)
+) -> dict[str, Any]:
+    ntid = _request_ntid(request, posit_connect_ntid)
     try:
         retrieve_copilot_token(ntid)
     except RuntimeError as exc:
@@ -320,7 +327,7 @@ def copilot_token_status(request: Request) -> dict[str, Any]:
 @app.post("/api/copilot/token")
 def save_token(body: CopilotTokenBody, request: Request) -> dict[str, Any]:
     try:
-        ntid = _request_ntid(request)
+        ntid = _request_ntid(request, body.posit_connect_ntid)
         save_copilot_token(ntid, body.github_token)
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -337,7 +344,9 @@ def query(body: QueryBody, request: Request) -> dict[str, Any]:
     github_token = (body.github_token or "").strip() or None
     if provider == "github_copilot" and not github_token:
         try:
-            github_token = retrieve_copilot_token(_request_ntid(request))
+            github_token = retrieve_copilot_token(
+                _request_ntid(request, body.posit_connect_ntid)
+            )
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     started = time.perf_counter()
