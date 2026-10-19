@@ -81,6 +81,7 @@ Properties:
 - `Project_Code`
 - `Project_Name`
 - `TA`
+- `Study_Priority`
 - `Indications`
 - `DSP_Apply_2_Step`
 - `DSP_US_Site`
@@ -91,6 +92,8 @@ Properties:
 - `DSP_Approved_2026_Exception`
 - `DSP_Nexus_Flag`
 - `DSP_Nexus_Country`
+
+`SDSL` is not a `Study_Info` property. A study's SDSL is `Delivery.SDSL` on its most recent delivery, reached by `(Study)-[:HAS_DELIVERY]->(Delivery)`. Most recent means the delivery with the latest `Actual_Delivery_Date` or `Planned_Delivery_Date`. When neither date is set, use the latest `Year` and then `Month`.
 
 ### Site
 

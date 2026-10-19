@@ -64,6 +64,7 @@
   details[open] summary{border-bottom:1px solid var(--line)}
   details .inner{padding:8px 10px}
   table{border-collapse:collapse;width:100%;font-size:12.5px;margin:6px 0;display:block;overflow:auto;max-height:420px}
+  table.detail-table td{white-space:normal;vertical-align:top}
   th,td{border:1px solid var(--line);padding:5px 9px;text-align:left;white-space:nowrap}
   th{background:var(--panel2);position:sticky;top:0}
   th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
@@ -320,6 +321,28 @@ function addUser(q){
 function confBadge(c){const map={high:'b-high',medium:'b-med',low:'b-low'};const t={high:'High confidence',medium:'Medium confidence',low:'Low confidence'};
   return `<span class="badge ${map[c]||'b-med'}">${t[c]||c}</span>`;}
 
+function detailCell(v){
+  if(v===null||v===undefined||String(v).trim()==='') return '—';
+  return esc(v);
+}
+function detailTable(title, rows, columns){
+  if(!rows||!rows.length) return '';
+  const head = columns.map(c=>`<th>${esc(c)}</th>`).join('');
+  const body = rows.map(row=>'<tr>'+columns.map(c=>`<td>${detailCell(row[c])}</td>`).join('')+'</tr>').join('');
+  return `<h4>${esc(title)} · ${rows.length}</h4><table class="detail-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+function renderEntityDetails(info){
+  if(!info) return '';
+  const studies = info.studies||[];
+  const deliveries = info.deliveries||[];
+  if(!studies.length && !deliveries.length) return '';
+  const counts = [];
+  if(studies.length) counts.push(`${studies.length} ${studies.length===1?'study':'studies'}`);
+  if(deliveries.length) counts.push(`${deliveries.length} ${deliveries.length===1?'delivery':'deliveries'}`);
+  const note = info.truncated?'<div class="muted">Showing the first 200 studies or deliveries from this result.</div>':'';
+  return `<details><summary>${esc(info.title||'Detailed Study/Delivery information')} (${counts.join(', ')})</summary><div class="inner">${note}${detailTable('Study', studies, ['Study','Plan_Phase','TA','Study_Priority','SDSL'])}${detailTable('Delivery', deliveries, ['Name','Reporting_Event','Reporting_Detail','Planned_Delivery_Date','SDSL'])}</div></details>`;
+}
+
 function addResult(r){
   conv.push({role:'assistant',content:r.answer||''});
   lastCaseId = r.case_id;
@@ -336,6 +359,7 @@ function addResult(r){
       ${r.timings_ms?`<details><summary>Stage timings</summary><div class="inner"><pre><code>${esc(Object.entries(r.timings_ms).map(([stage,ms])=>`${stage}: ${ms}ms`).join('\n'))}</code></pre></div></details>`:''}
     </div>
     ${renderMarkdown(r.answer)}
+    ${renderEntityDetails(r.entity_details)}
     ${r.cypher?`<details><summary>🔍 Final Cypher</summary><div class="inner"><pre><code>${esc(r.cypher)}</code></pre></div></details>`:''}
     ${attempts?`<details><summary>🧪 Execution &amp; self-correction</summary><div class="inner">${attempts}</div></details>`:''}
     <div class="result-tabs" data-id="${r.case_id||''}"></div>

@@ -258,7 +258,9 @@ class _GraphBuilder:
         return str(value)
 
 
-def run_cypher_with_meta(query: str, max_rows: int = 200) -> dict[str, Any]:
+def run_cypher_with_meta(
+    query: str, max_rows: int = 200, *, record_meta: bool = True
+) -> dict[str, Any]:
     """Run read-only Cypher and return rows plus a reconstructed relationship graph."""
     global _LAST_META
     safe = ensure_read_only(query)
@@ -281,7 +283,8 @@ def run_cypher_with_meta(query: str, max_rows: int = 200) -> dict[str, Any]:
             "row_count": len(rows),
             "cypher": safe,
         }
-        _LAST_META = meta
+        if record_meta:
+            _LAST_META = meta
         return meta
 
 
@@ -289,8 +292,10 @@ def last_query_meta() -> dict[str, Any]:
     return _LAST_META
 
 
-def run_cypher(query: str, limit_rows: int = 200) -> list[dict[str, Any]]:
-    return run_cypher_with_meta(query, max_rows=limit_rows)["rows"]
+def run_cypher(
+    query: str, limit_rows: int = 200, *, record_meta: bool = True
+) -> list[dict[str, Any]]:
+    return run_cypher_with_meta(query, max_rows=limit_rows, record_meta=record_meta)["rows"]
 
 
 def get_schema(*, force: bool = False, include_counts: bool = False) -> dict[str, Any]:

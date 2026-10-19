@@ -33,6 +33,7 @@ DATE_QUERY_RE = re.compile(r"\b(?:planned|actual|date)\b|日期|计划|实际", 
 COMPLETED_QUERY_RE = re.compile(r"\bcompleted?\b|已完成|完成", re.IGNORECASE)
 COUNT_QUERY_RE = re.compile(r"\b(?:how many|count|number of)\b|多少|数量", re.IGNORECASE)
 NEXT_MONTH_RE = re.compile(r"\bnext month\b|下个月", re.IGNORECASE)
+from entity_profiles import prepare_entity_presentation
 from result_presentation import select_result_presentation, table_from_rows
 from vox_client import add_usage, chat as _chat, empty_usage
 
@@ -190,6 +191,7 @@ class AgentState(TypedDict, total=False):
     repair_attempts: int
     usage: dict[str, int]
     answer: str
+    entity_details: dict[str, Any] | None
     visualization: dict[str, Any] | None
     presentation_warning: str | None
     timings_ms: dict[str, int]
@@ -1091,7 +1093,8 @@ Rules:
 16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string. Do not match Name alone. This same OR applies to hours questions.
 17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern.
 18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC or Delivery.SDSA_China_PoC on a contributing study or supporting delivery. Follow submission.md.
-19. When the user asks which team supported a submission, a team is Person.Team_Lead_Name. Return distinct team lead names only. Do not list every person who worked on the submission."""
+19. When the user asks which team supported a submission, a team is Person.Team_Lead_Name. Return distinct team lead names only. Do not list every person who worked on the submission.
+20. Study_Info includes Plan_Phase, TA, and Study_Priority via (Study)-[:HAS_DETAIL]->(Study_Info). SDSL is not a Study_Info property. Do not read SDSL from Study_Info."""
 
     user = f"""Schema:
 {schema_text}
@@ -1180,11 +1183,13 @@ def answer_from_rows(
     rows: list[dict[str, Any]],
     *,
     structured_presentation: bool = False,
+    concise: bool = False,
 ) -> tuple[str, dict[str, int]]:
     wants_breakdown = _wants_delivery_breakdown(question)
     payload = _rows_for_prompt(
         rows, ROWS_MAX_CHARS if wants_breakdown else 3500
     )
+    short_conclusion = concise or structured_presentation
     if wants_breakdown:
         detail_rule = (
             "List each matching delivery. Never answer with only a grand total. "
@@ -1196,18 +1201,26 @@ def answer_from_rows(
             "Use Actual_Delivery_Date for completed deliveries and Planned_Delivery_Date "
             "for Ongoing or Planned deliveries."
         )
-    elif structured_presentation:
-        detail_rule = (
-            "A validated chart or table will render the row details separately. Give only "
-            "a direct, concise conclusion in at most two sentences; do not output a "
-            "markdown table, list, or repeat individual rows."
+        lead_rule = (
+            "Lead with a short total or count if it helps, then list the supporting deliveries."
         )
+    elif short_conclusion:
+        detail_rule = (
+            "Give only a direct conclusion in at most two sentences. Do not output a "
+            "markdown table or list Plan_Phase, TA, Study_Priority, SDSL, Reporting_Event, "
+            "Reporting_Detail, or Planned_Delivery_Date; those profile fields are attached "
+            "separately."
+        )
+        lead_rule = "Lead with a short conclusion of at most two sentences."
     else:
         detail_rule = "For multiple rows, use a concise list or table-style markdown."
+        lead_rule = (
+            "Lead with a short total or count if it helps, then list the supporting deliveries."
+        )
     system = f"""You are a Neo4j graph Q&A assistant. Answer from the query results in clear natural language.
 Rules:
 1. {LANGUAGE_RULE}
-2. Lead with a short total or count if it helps, then list the supporting deliveries.
+2. {lead_rule}
 3. Never invent data that is not in the results.
 4. If results are empty, explain likely reasons (wrong ID, property name, or no matching data).
 5. {detail_rule}
@@ -1459,10 +1472,41 @@ def _format_local_answer(question: str, rows: list[dict[str, Any]]) -> str | Non
     return None
 
 
+def _join_answer(answer: str, extra: str) -> str:
+    answer = (answer or "").rstrip()
+    extra = (extra or "").strip()
+    if not extra:
+        return answer
+    if not answer:
+        return extra
+    return f"{answer}\n\n{extra}"
+
+
+def _entity_view(
+    question: str, rows: list[dict[str, Any]], cypher: str
+) -> tuple[str, dict[str, Any] | None, bool]:
+    presentation = prepare_entity_presentation(
+        rows,
+        cypher,
+        _graph_for_cypher(cypher),
+        chinese=bool(re.search(r"[\u4e00-\u9fff]", question or "")),
+        query=lambda statement: run_cypher(statement, record_meta=False),
+    )
+    return presentation.inline, presentation.panel, presentation.looked_up
+
+
 def _answer(state: AgentState) -> AgentState:
     rows = state.get("rows", [])
     if not rows:
-        return {"answer": _empty_answer(state["question"])}
+        return {"answer": _empty_answer(state["question"]), "entity_details": None}
+
+    timings = dict(state.get("timings_ms", {}))
+    started = time.perf_counter()
+    inline, panel, looked_up = _entity_view(
+        state.get("question") or "", rows, state.get("cypher") or ""
+    )
+    if looked_up:
+        timings = _add_timing({"timings_ms": timings}, "entity_details", started)
 
     started = time.perf_counter()
     if _wants_delivery_breakdown(state["question"]):
@@ -1489,10 +1533,10 @@ def _answer(state: AgentState) -> AgentState:
             None,
         )
     timings = (
-        _add_timing(state, "presentation", started)
+        _add_timing({"timings_ms": timings}, "presentation", started)
         if _wants_delivery_breakdown(state["question"])
         or _needs_presentation_selection(state["question"])
-        else dict(state.get("timings_ms", {}))
+        else timings
     )
     updates: AgentState = {
         "usage": _add_state_usage(state, presentation_usage),
@@ -1516,11 +1560,13 @@ def _answer(state: AgentState) -> AgentState:
             state["cypher"],
             rows,
             structured_presentation=visualization is not None,
+            concise=bool(inline or panel),
         )
         updates["timings_ms"] = _add_timing(
             {"timings_ms": timings}, "answer_generation", started
         )
-    updates["answer"] = answer
+    updates["answer"] = _join_answer(answer, inline)
+    updates["entity_details"] = panel
     updates["usage"] = add_usage(updates["usage"], answer_usage)
     return updates
 
@@ -1612,6 +1658,7 @@ def _legacy_ask(
                     chat=lambda system, user: _chat(system, user, temperature=0),
                 )
             usage = add_usage(usage, presentation_usage)
+            inline, panel, _looked_up = _entity_view(question, rows, cypher)
             if visualization is not None and not visualization["summary_required"] and not _wants_delivery_breakdown(question):
                 answer = ""
             else:
@@ -1620,8 +1667,10 @@ def _legacy_ask(
                     cypher,
                     rows,
                     structured_presentation=visualization is not None,
+                    concise=bool(inline or panel),
                 )
                 usage = add_usage(usage, u2)
+            answer = _join_answer(answer, inline)
             case_id = _remember_case(question, cypher, rows, None)
             columns = list(dict.fromkeys(key for row in rows for key in row))
             return {
@@ -1629,6 +1678,7 @@ def _legacy_ask(
                 "cypher": cypher,
                 "rows": rows,
                 "columns": columns,
+                "entity_details": panel,
                 "schema": schema,
                 "error": None,
                 "usage": usage,
@@ -1714,6 +1764,7 @@ def ask(
         "cypher": cypher,
         "rows": rows,
         "columns": list(dict.fromkeys(key for row in rows for key in row)),
+        "entity_details": result.get("entity_details"),
         "schema": result.get("schema", schema),
         "error": error,
         "usage": result.get("usage", intent_usage),
