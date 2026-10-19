@@ -11,7 +11,7 @@ echo Installing deps...
 
 echo.
 echo Starting DID Insight UI at http://127.0.0.1:8010
-echo Neo4j: bolt://10.109.17.64:7687
+echo Neo4j: bolt://10.109.2.157:7687
 echo.
 
 "%PY_EXE%" -m uvicorn app:app --host 127.0.0.1 --port 8010

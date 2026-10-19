@@ -336,7 +336,7 @@ If Connect already has this repo as a Streamlit app, **Import from Git again** a
 
 Do **not** rely on uploading `.env` in production. Set Connect **Vars**:
 
-- `NEO4J_URI` = `bolt://10.109.17.64:7687`
+- `NEO4J_URI` = `bolt://10.109.2.157:7687`
 - `NEO4J_USERNAME` = `neo4j`
 - `NEO4J_PASSWORD` = *(secret)*
 - `NEO4J_DATABASE` = `neo4j`
@@ -353,7 +353,7 @@ For local testing, keep secrets in `rsc-app/.env` (already gitignored).
 
 From the **Connect server**, these must be reachable:
 
-1. Neo4j Bolt: `10.109.17.64:7687`
+1. Neo4j Bolt: `10.109.2.157:7687`
 2. Vox token: `https://prodfederate.pfizer.com`
 3. Vox API: `https://mule4api-comm-amer.pfizer.com`
 4. GitHub artifact URL: `https://media.githubusercontent.com` (needed on the

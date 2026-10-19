@@ -176,7 +176,7 @@ Git-backed 内容在描述里会显示 **from Git**，并在 **Settings → Info
 
 | 变量 | 示例 / 说明 |
 |------|-------------|
-| `NEO4J_URI` | `bolt://10.109.17.64:7687` |
+| `NEO4J_URI` | `bolt://10.109.2.157:7687` |
 | `NEO4J_USERNAME` | `neo4j` |
 | `NEO4J_PASSWORD` | （密钥） |
 | `NEO4J_DATABASE` | `neo4j` |
