@@ -120,6 +120,8 @@ class InsightPayloadTests(unittest.TestCase):
         self.assertIn("fetch('/__api__/me'", source)
         self.assertIn("credentials:'same-origin'", source)
         self.assertIn("posit_connect_ntid", source)
+        self.assertIn('id="copilot-ntid"', source)
+        self.assertIn("enteredNtid()||positConnectNtid", source)
 
 
 if __name__ == "__main__":

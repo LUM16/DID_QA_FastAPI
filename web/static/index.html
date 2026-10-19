@@ -175,6 +175,9 @@
   <label id="copilot-token-wrap" class="muted" hidden>GitHub token
     <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." />
   </label>
+  <label id="copilot-ntid-wrap" class="muted" hidden>NTID
+    <input id="copilot-ntid" type="text" autocomplete="username" placeholder="user.name" />
+  </label>
   <button id="copilot-save" hidden type="button">Save token</button>
   <span id="copilot-status" class="muted" hidden></span>
   <button id="btn-stats" title="Learning statistics">Stats</button>
@@ -819,6 +822,7 @@ let copilotTokenSaved=false;
 let positConnectNtid='';
 function selectedProvider(){return $('#provider').value;}
 function copilotToken(){return $('#copilot-token').value.trim();}
+function enteredNtid(){return $('#copilot-ntid').value.trim();}
 async function resolvePositConnectNtid(){
   const xsrfCookie=document.cookie.split('; ').find(item=>item.startsWith('RSC-XSRF-legacy='));
   const xsrfToken=xsrfCookie?xsrfCookie.slice('RSC-XSRF-legacy='.length):'';
@@ -829,9 +833,10 @@ async function resolvePositConnectNtid(){
     const profile=payload?.profile||payload?.user||payload||{};
     positConnectNtid=String(profile?.username||payload?.username||'').trim();
   }catch(e){positConnectNtid='';}
+  if(positConnectNtid&&!enteredNtid()) $('#copilot-ntid').value=positConnectNtid;
   return positConnectNtid;
 }
-function copilotIdentityPayload(){return positConnectNtid?{posit_connect_ntid:positConnectNtid}:{};}
+function copilotIdentityPayload(){const ntid=enteredNtid()||positConnectNtid;return ntid?{posit_connect_ntid:ntid}:{};}
 function queryProviderPayload(){
   const provider=selectedProvider();
   return provider==='github_copilot'&&copilotToken() ? {provider,github_token:copilotToken(),...copilotIdentityPayload()} : {provider,...copilotIdentityPayload()};
@@ -841,7 +846,8 @@ async function refreshCopilotTokenStatus(){
   status.textContent='Checking saved token…';
   try{
     await resolvePositConnectNtid();
-    const query=positConnectNtid?`?posit_connect_ntid=${encodeURIComponent(positConnectNtid)}`:'';
+    const ntid=enteredNtid()||positConnectNtid;
+    const query=ntid?`?posit_connect_ntid=${encodeURIComponent(ntid)}`:'';
     const result=await api(`/api/copilot/token${query}`);
     copilotTokenSaved=!!result.saved;
     status.textContent=result.saved?`Saved token ready (${result.ntid})`:'No saved token';
@@ -854,12 +860,16 @@ async function refreshCopilotTokenStatus(){
 function syncCopilotControls(){
   const active=selectedProvider()==='github_copilot';
   $('#copilot-token-wrap').hidden=!active;
+  $('#copilot-ntid-wrap').hidden=!active;
   $('#copilot-save').hidden=!active;
   $('#copilot-status').hidden=!active;
   if(active) refreshCopilotTokenStatus();
   if(active&&!copilotToken()) $('#copilot-token').focus();
 }
 $('#provider').onchange=syncCopilotControls;
+$('#copilot-ntid').onchange=()=>{
+  if(selectedProvider()==='github_copilot') refreshCopilotTokenStatus();
+};
 $('#copilot-save').onclick=async()=>{
   const token=copilotToken();
   if(!token){$('#copilot-token').focus();toast('Enter a GitHub token first.');return;}
