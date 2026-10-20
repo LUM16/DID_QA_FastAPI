@@ -379,6 +379,10 @@ function addResult(r){
   conv.push({role:'assistant',content:r.answer||''});
   lastCaseId = r.case_id;
   const d=document.createElement('div');d.className='msg ai';
+  const usage = r.usage||{};
+  const consumption = r.provider==='github_copilot'
+    ? 'Copilot billing usage unavailable'
+    : `${Number(r.total_tokens??usage.total_tokens??0).toLocaleString()} tokens (${Number(r.prompt_tokens??usage.prompt_tokens??0).toLocaleString()} in / ${Number(r.completion_tokens??usage.completion_tokens??0).toLocaleString()} out)`;
   const attempts = (r.attempts||[]).map((a,i)=>{
     const st = a.error?`❌ ${esc(a.error)}`:(a.row_count>0?`✅ ${a.row_count} rows`:'0 rows');
     return `<div><strong>Attempt ${i+1}</strong> — ${st}${a.cypher?`<pre><code>${esc(a.cypher)}</code></pre>`:''}${a.feedback?`<div class="muted">↳ ${esc(a.feedback)}</div>`:''}</div>`;
@@ -387,7 +391,7 @@ function addResult(r){
     <div class="meta">
       ${confBadge(r.confidence)}
       <span>${esc(r.provider||'')}${r.model?' / '+esc(r.model):''}${r.fallback_used?' (fallback)':''}</span>
-      <span>· attempts ${(r.attempts||[]).length} · ${r.row_count} rows · ${r.elapsed_ms}ms · ${Number(r.total_tokens||((r.usage||{}).total_tokens)||0).toLocaleString()} tokens (${Number(r.prompt_tokens||((r.usage||{}).prompt_tokens)||0).toLocaleString()} in / ${Number(r.completion_tokens||((r.usage||{}).completion_tokens)||0).toLocaleString()} out)</span>
+      <span>· attempts ${(r.attempts||[]).length} · ${r.row_count} rows · ${r.elapsed_ms}ms · ${consumption}</span>
       ${r.timings_ms?`<details><summary>Stage timings</summary><div class="inner"><pre><code>${esc(Object.entries(r.timings_ms).map(([stage,ms])=>`${stage}: ${ms}ms`).join('\n'))}</code></pre></div></details>`:''}
     </div>
     ${renderMarkdown(r.answer)}
