@@ -41,6 +41,14 @@
   select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
   button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 12px;
          cursor:pointer}
+    dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;
+      box-shadow:0 18px 50px rgba(0,0,0,.45);max-height:calc(100dvh - 32px);max-width:560px;
+      overflow-y:auto;padding:22px;width:calc(100% - 32px)}
+    dialog::backdrop{background:rgba(0,0,0,.55)}
+    dialog h2{cursor:move;font-size:18px;margin:0 0 12px;user-select:none}
+    dialog ol{line-height:1.7;margin:0;padding-left:22px}
+    dialog a{color:var(--accent)}
+    .dialog-actions{display:flex;justify-content:flex-end;margin-top:18px}
   #copilot-token,#copilot-ntid{background:var(--panel);border:1px solid var(--line);border-radius:4px;
     color:var(--text);padding:5px 7px}
   #copilot-token:-webkit-autofill,#copilot-ntid:-webkit-autofill{-webkit-text-fill-color:var(--text);
@@ -168,12 +176,9 @@
   <button id="btn-theme" class="iconbtn" title="Switch between dark and light theme">☀️</button>
   <label class="muted">LLM
     <select id="provider">
-      <option value="">Default (auto fallback)</option>
+      <option value="github_copilot" selected>GitHub Copilot</option>
       <option value="ollama">ollama (local)</option>
-      <option value="ark">ark (Volcengine)</option>
-      <option value="vox" selected>vox (Voxpy/OAuth)</option>
-      <option value="openai">openai (compat endpoint)</option>
-      <option value="github_copilot">GitHub Copilot</option>
+      <option value="vox">vox (Voxpy/OAuth)</option>
     </select>
   </label>
   <label id="copilot-token-wrap" class="muted" hidden>GitHub token
@@ -183,11 +188,25 @@
     <input id="copilot-ntid" type="text" autocomplete="username" placeholder="user.name" />
   </label>
   <button id="copilot-save" hidden type="button">Save token</button>
+  <button id="copilot-help" class="iconbtn" hidden type="button" title="How to get a GitHub token" aria-label="How to get a GitHub token">?</button>
   <span id="copilot-status" class="muted" hidden></span>
   <button id="btn-stats" title="Learning statistics">Stats</button>
   <button id="btn-improve" title="Distill failures into rules">Self-improve</button>
   <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
 </header>
+<dialog id="copilot-help-dialog" aria-labelledby="copilot-help-title">
+  <h2 id="copilot-help-title">Get a GitHub Copilot Token</h2>
+  <ol>
+    <li>Sign in with a GitHub account that has access to GitHub Copilot.</li>
+    <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Fine-grained personal access tokens</a> and select Generate new token.</li>
+    <li>For Resource owner, select your personal GitHub account. Set Repository access to No repositories.</li>
+    <li>Under Account permissions, set Copilot Requests to Read-only. Do not grant repository, organization, or other permissions for this app.</li>
+    <li>Choose the shortest expiration permitted by your organization, generate the token, and copy it immediately. GitHub only displays the full token once.</li>
+    <li>Paste the token into the GitHub token field, enter your NTID, and select Save token.</li>
+  </ol>
+  <p class="muted">If Copilot Requests is unavailable, your account may not have a Copilot entitlement or your organization may restrict personal access tokens. Contact your GitHub organization administrator. Never share a token, commit it to a repository, or include it in screenshots.</p>
+  <div class="dialog-actions"><button id="copilot-help-close" type="button">Close</button></div>
+</dialog>
 
 <nav class="planning-tabs" aria-label="Workflows">
   <button class="primary" data-workflow="chat" aria-pressed="true">Ask Neo4j</button>
@@ -866,11 +885,37 @@ function syncCopilotControls(){
   $('#copilot-token-wrap').hidden=!active;
   $('#copilot-ntid-wrap').hidden=!active;
   $('#copilot-save').hidden=!active;
+  $('#copilot-help').hidden=!active;
   $('#copilot-status').hidden=!active;
   if(active) refreshCopilotTokenStatus();
   if(active&&!copilotToken()) $('#copilot-token').focus();
 }
 $('#provider').onchange=syncCopilotControls;
+$('#copilot-help').onclick=()=>$('#copilot-help-dialog').showModal();
+$('#copilot-help-close').onclick=()=>$('#copilot-help-dialog').close();
+{
+  const dialog=$('#copilot-help-dialog');
+  const title=$('#copilot-help-title');
+  let offsetX=0;
+  let offsetY=0;
+  title.onpointerdown=event=>{
+    const bounds=dialog.getBoundingClientRect();
+    offsetX=event.clientX-bounds.left;
+    offsetY=event.clientY-bounds.top;
+    dialog.style.margin='0';
+    dialog.style.left=`${bounds.left}px`;
+    dialog.style.top=`${bounds.top}px`;
+    title.setPointerCapture(event.pointerId);
+  };
+  title.onpointermove=event=>{
+    if(!title.hasPointerCapture(event.pointerId)) return;
+    const maxLeft=window.innerWidth-dialog.offsetWidth;
+    const maxTop=window.innerHeight-dialog.offsetHeight;
+    dialog.style.left=`${Math.max(0,Math.min(event.clientX-offsetX,maxLeft))}px`;
+    dialog.style.top=`${Math.max(0,Math.min(event.clientY-offsetY,maxTop))}px`;
+  };
+  title.onpointerup=event=>title.releasePointerCapture(event.pointerId);
+}
 $('#copilot-ntid').onchange=()=>{
   if(selectedProvider()==='github_copilot') refreshCopilotTokenStatus();
 };
