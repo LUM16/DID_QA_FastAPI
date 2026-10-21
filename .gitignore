@@ -43,3 +43,5 @@ data/
 # Sizhen for test
 test_extract_effort_person.py
 test_match_person.py
+test_hce_calculation.py
+source_data/
