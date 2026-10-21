@@ -59,6 +59,8 @@ For org-chart or reporting-tree questions, prefer this scalar return shape so th
 
 `person`, `reporting_level`, `reports_to`, `status`
 
+`reports_to` is the direct manager from `(Person)-[:REPORTS_TO]->(Person)` for every person, including the level-0 person. Leave it empty only when that relationship is absent. Do not clear it because `reporting_level` is 0.
+
 When answering a new question:
 
 1. Identify the user's business intent.

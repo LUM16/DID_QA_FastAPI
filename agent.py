@@ -1086,7 +1086,7 @@ Rules:
 9. Prefer business query patterns from person_productivity.md, workload_planning.md, study_delivery.md, submission.md, lot_tlf_sdtm_adam.md, team_manager.md, reporting_dashboard.md, and query_index.md.
 10. Do not generate employee ranking/performance-scoring queries.
 11. When user-endorsed thumbs-up examples are provided, prefer those Cypher patterns if they match the question.
-12. For org-chart / reporting-tree questions, prefer the scalar template columns person, reporting_level, reports_to, status so the UI can render both a table and an organization chart.
+12. For org-chart / reporting-tree questions, prefer the scalar template columns person, reporting_level, reports_to, status so the UI can render both a table and an organization chart. reports_to is the direct (Person)-[:REPORTS_TO]->(Person) manager for every row, including reporting_level 0. Do not replace that manager with an empty list. Use an empty list only when the person has no REPORTS_TO relationship.
 13. WORKS_ON has no Task_Num_Total.
 14. If the user asks about tasks, return one row per Delivery with aliases Delivery, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date, CSR, SDA, STD, eSub. CSR/SDA/STD/eSub must be the four WORKS_ON task totals. Do not return only SUM() as a single total. Do not alias columns to raw names like CSR_Task_Num_Total.
 15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.

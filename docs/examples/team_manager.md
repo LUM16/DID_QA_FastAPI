@@ -6,8 +6,8 @@
 
 **Business intent**  
 Preferred template for org-chart / team-structure questions. Returns one row per person so the UI can render both a table and a grouped organization chart.
-- `reporting_level` is 0 for the root person, 1 for direct reports, 2 for their reports, and so on.
-- `reports_to` is the direct manager's Name (a list; empty for the level-0 root).
+- `reporting_level` is 0 for the asked person, 1 for direct reports, 2 for their reports, and so on.
+- `reports_to` is that person's direct manager Name from `(Person)-[:REPORTS_TO]->(Person)`. Include it for the level-0 person. Use an empty list only when that person has no `REPORTS_TO` relationship. Do not clear `reports_to` because `reporting_level` is 0.
 
 **Parameters**
 
@@ -25,7 +25,7 @@ WHERE replace(toUpper(root.Name), " ", "") = replace(toUpper("{{manager:Person n
 WITH root, member, min(length(path)) AS reporting_level
 OPTIONAL MATCH (member)-[:REPORTS_TO]->(mgr:Person)
 WITH member, reporting_level,
-     CASE WHEN reporting_level = 0 THEN [] ELSE collect(DISTINCT mgr.Name) END AS reports_to
+     [name IN collect(DISTINCT mgr.Name) WHERE name IS NOT NULL] AS reports_to
 RETURN member.Name AS person,
        reporting_level,
        reports_to,
