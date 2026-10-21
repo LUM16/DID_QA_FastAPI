@@ -351,12 +351,15 @@ def query(body: QueryBody, request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     started = time.perf_counter()
 
-    # Step 1 - normalise person mentions to official roster names.
+    # Step 1 - normalise person mentions to official roster names. Use the same
+    # LLM provider as the agent so person extraction does not silently fall
+    # back to Vox when the user selected GitHub Copilot.
     try:
-        if body.person_match is not None:
-            match = apply_person_choices(body.person_match, body.person_choices)
-        else:
-            match = match_person_in_prompt(body.question.strip(), request=request)
+        with use_llm_provider(provider, github_token):
+            if body.person_match is not None:
+                match = apply_person_choices(body.person_match, body.person_choices)
+            else:
+                match = match_person_in_prompt(body.question.strip(), request=request)
     except Exception as exc:  # noqa: BLE001
         TIMING_LOG.warning("person matching skipped: %s", exc)
         match = {"prompt": body.question.strip(), "status": "no_person", "ambiguous": []}
