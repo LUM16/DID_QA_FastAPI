@@ -56,7 +56,7 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
   .ok{background:var(--high)} .bad{background:var(--low)}
-  main{max-width:1040px;margin:0 auto;padding:18px 18px 240px}
+  main{max-width:1040px;margin:0 auto;padding:18px 18px 140px}
   .msg{margin:14px 0;display:flex;gap:10px}
   .msg.user{justify-content:flex-start}
   .bubble{max-width:92%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:normal}
@@ -97,18 +97,6 @@
   canvas{background:var(--canvas-bg);border:1px solid var(--line);border-radius:8px;max-width:100%}
   .composer{position:fixed;left:0;right:0;bottom:0;z-index:7;background:linear-gradient(transparent,var(--bg) 30%);
             padding:16px 0 18px}
-  #utility{position:fixed;z-index:6;left:18px;bottom:86px;display:flex;flex-direction:column;
-           align-items:flex-start;gap:8px;max-width:min(760px,calc(100vw - 36px));padding:8px 10px;
-           background:var(--panel);border:1px solid var(--line);border-radius:10px;
-           box-shadow:0 6px 18px rgba(0,0,0,.12)}
-  #utility .util-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  #copilot-tools:not(:has(> :not([hidden]))){display:none}
-  #utility label{font-size:12px}
-  #utility input{width:148px}
-  #utility button{padding:5px 8px;font-size:12px}
-  #copilot-status{font-size:12px}
-  body.sb #utility{left:268px}
-  body:has(.composer[hidden]) #utility{bottom:12px}
   .composer .box{max-width:1040px;margin:0 auto;padding:0 18px;display:flex;gap:10px}
   .composer input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;
                   padding:12px 14px}
@@ -128,7 +116,15 @@
                font-size:13px;border-bottom:1px solid var(--line)}
   #sidebar .sh .spacer{flex:1}
   #sidebar .sh button{padding:2px 8px;font-size:11px}
-  #hlist{overflow:auto;flex:1;padding:6px}
+  #hlist{overflow:auto;flex:1;min-height:0;padding:6px}
+  #utility{flex-shrink:0;display:flex;flex-direction:column;gap:8px;padding:10px;
+           border-top:1px solid var(--line);background:var(--panel)}
+  #utility .util-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  #copilot-tools:not(:has(> :not([hidden]))){display:none}
+  #utility label{display:flex;flex-direction:column;gap:4px;width:100%;font-size:12px}
+  #utility input{width:100%;box-sizing:border-box}
+  #utility button{padding:5px 8px;font-size:12px}
+  #copilot-status{font-size:12px;line-height:1.35}
   .hitem{display:block;width:100%;text-align:left;background:transparent;border:0;
          border-bottom:1px solid var(--hitem-line);color:var(--muted);padding:8px 10px;font-size:12.5px;
          border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -173,6 +169,24 @@
     <button id="btn-clear-hist" title="Clear history">Clear</button>
   </div>
   <div id="hlist"><div class="hempty">No queries yet.</div></div>
+  <div id="utility">
+    <div class="util-row" id="copilot-tools">
+      <label id="copilot-token-wrap" class="muted" hidden>GitHub token
+        <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." />
+      </label>
+      <label id="copilot-ntid-wrap" class="muted" hidden>NTID
+        <input id="copilot-ntid" type="text" autocomplete="username" placeholder="user.name" />
+      </label>
+      <button id="copilot-save" hidden type="button">Save token</button>
+      <button id="copilot-help" class="iconbtn" hidden type="button" title="How to get a GitHub token" aria-label="How to get a GitHub token">?</button>
+      <span id="copilot-status" class="muted" hidden></span>
+    </div>
+    <div class="util-row">
+      <button id="btn-stats" title="Learning statistics">Stats</button>
+      <button id="btn-improve" title="Distill failures into rules">Self-improve</button>
+      <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
+    </div>
+  </div>
 </aside>
 <header>
   <button id="btn-toggle-sb" class="iconbtn" title="Show/hide history sidebar">☰</button>
@@ -191,24 +205,6 @@
     </select>
   </label>
 </header>
-<div id="utility">
-  <div class="util-row" id="copilot-tools">
-    <label id="copilot-token-wrap" class="muted" hidden>GitHub token
-      <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." />
-    </label>
-    <label id="copilot-ntid-wrap" class="muted" hidden>NTID
-      <input id="copilot-ntid" type="text" autocomplete="username" placeholder="user.name" />
-    </label>
-    <button id="copilot-save" hidden type="button">Save token</button>
-    <button id="copilot-help" class="iconbtn" hidden type="button" title="How to get a GitHub token" aria-label="How to get a GitHub token">?</button>
-    <span id="copilot-status" class="muted" hidden></span>
-  </div>
-  <div class="util-row">
-    <button id="btn-stats" title="Learning statistics">Stats</button>
-    <button id="btn-improve" title="Distill failures into rules">Self-improve</button>
-    <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
-  </div>
-</div>
 <dialog id="copilot-help-dialog" aria-labelledby="copilot-help-title">
   <h2 id="copilot-help-title">Get a GitHub Copilot Token</h2>
   <ol>
