@@ -58,10 +58,11 @@
   .ok{background:var(--high)} .bad{background:var(--low)}
   main{max-width:1040px;margin:0 auto;padding:18px 18px 140px}
   .msg{margin:14px 0;display:flex;gap:10px}
-  .msg.user{justify-content:flex-start}
+  .msg.user{justify-content:flex-start;align-items:center}
   .bubble{max-width:92%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:normal}
-  .user .bubble{background:var(--accent);color:#fff;border-bottom-left-radius:3px;width:fit-content}
-  .qmark{margin-right:6px}
+  .user .bubble{background:var(--accent);color:#fff;border:1px solid var(--accent);
+               border-bottom-left-radius:3px;width:fit-content}
+  .qmark{flex:none;margin-right:8px;font-size:18px;line-height:1}
   .ai .bubble{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:3px;width:100%}
   .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-bottom:8px}
   .badge{padding:1px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
@@ -358,7 +359,7 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.style.display='block
 function addUser(q){
   conv.push({role:'user',content:q});
   const d=document.createElement('div');d.className='msg user';
-  d.innerHTML=`<div class="bubble"><span class="qmark" aria-hidden="true">🐬</span>${esc(q)}</div>`;chat.appendChild(d);scroll();
+  d.innerHTML=`<span class="qmark" aria-hidden="true">🐬</span><div class="bubble">${esc(q)}</div>`;chat.appendChild(d);scroll();
 }
 
 function confBadge(c){const map={high:'b-high',medium:'b-med',low:'b-low'};const t={high:'High confidence',medium:'Medium confidence',low:'Low confidence'};
