@@ -86,7 +86,7 @@ WHERE delivery.DID_Status = 'Completed'
   AND delivery.Year * 12 + delivery.Month <= endS2
 WITH person, delivery, w, startS1, endS1, startS2, endS2,
      coalesce(toFloat(w.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(w.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(w.STD_Task_Num_Total), 0.0) + coalesce(toFloat(w.esub_Data_Num_Total), 0.0) AS Member_Task_Num,
-     coalesce(toFloat(delivery.CSR_Task_Num), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num), 0.0) + coalesce(toFloat(delivery.STD_Task_Num), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) AS Delivery_Task_Num
+     coalesce(toFloat(delivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) AS Delivery_Task_Num
 WITH person.Name AS DU_Member_Name,
      sum(CASE WHEN delivery.Year * 12 + delivery.Month >= startS1 AND delivery.Year * 12 + delivery.Month <= endS1 THEN Member_Task_Num ELSE 0 END) AS Total_Tasks_S1,
      sum(CASE WHEN delivery.Year * 12 + delivery.Month >= startS2 AND delivery.Year * 12 + delivery.Month <= endS2 THEN Member_Task_Num ELSE 0 END) AS Total_Tasks_S2,
@@ -129,7 +129,7 @@ WHERE delivery.DID_Status = 'Completed'
   AND delivery.Actual_Delivery_Date <= today
 WITH person.Name AS DU_Member_Name, delivery,
      coalesce(toFloat(w.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(w.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(w.STD_Task_Num_Total), 0.0) + coalesce(toFloat(w.esub_Data_Num_Total), 0.0) AS Member_Task_Num,
-     coalesce(toFloat(delivery.CSR_Task_Num), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num), 0.0) + coalesce(toFloat(delivery.STD_Task_Num), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) AS Delivery_Task_Num
+     coalesce(toFloat(delivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) AS Delivery_Task_Num
 WITH DU_Member_Name,
      sum(Member_Task_Num + CASE WHEN DU_Member_Name = delivery.SDSL THEN Delivery_Task_Num ELSE 0.0 END) AS Total_Task,
      collect(DISTINCT delivery.DID) AS Delivery_IDs
@@ -176,7 +176,7 @@ WHERE delivery.DID_Status = 'Completed'
   AND delivery.Actual_Delivery_Date <= today
 WITH startOfPeriod, today, deptLeaderName, duPerson.Name AS duMemberName,
      COALESCE(SUM(coalesce(toFloat(w.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(w.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(w.STD_Task_Num_Total), 0.0) + coalesce(toFloat(w.esub_Data_Num_Total), 0.0)), 0.0)
-     + COALESCE(SUM(CASE WHEN duPerson.Name = delivery.SDSL THEN coalesce(toFloat(delivery.CSR_Task_Num), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num), 0.0) + coalesce(toFloat(delivery.STD_Task_Num), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS duPersonTotalTask
+     + COALESCE(SUM(CASE WHEN duPerson.Name = delivery.SDSL THEN coalesce(toFloat(delivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS duPersonTotalTask
 MATCH (deptLeader:Person)
 WHERE lower(replace(deptLeader.Name, ' ', '')) = lower(replace(deptLeaderName, ' ', ''))
 OPTIONAL MATCH (subordinate:Person)-[:REPORTS_TO]->(deptLeader)
@@ -187,7 +187,7 @@ WHERE subDelivery.DID_Status = 'Completed'
 WITH duMemberName, duPersonTotalTask,
      COUNT(DISTINCT subordinate) AS deptPersonCount,
      COALESCE(SUM(coalesce(toFloat(sw.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(sw.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(sw.STD_Task_Num_Total), 0.0) + coalesce(toFloat(sw.esub_Data_Num_Total), 0.0)), 0.0)
-     + COALESCE(SUM(CASE WHEN subordinate.Name = subDelivery.SDSL THEN coalesce(toFloat(subDelivery.CSR_Task_Num), 0.0) + coalesce(toFloat(subDelivery.SDA_Task_Num), 0.0) + coalesce(toFloat(subDelivery.STD_Task_Num), 0.0) + coalesce(toFloat(subDelivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS deptTotalTask
+     + COALESCE(SUM(CASE WHEN subordinate.Name = subDelivery.SDSL THEN coalesce(toFloat(subDelivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(subDelivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(subDelivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(subDelivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS deptTotalTask
 WITH duMemberName, duPersonTotalTask, deptTotalTask,
      CASE WHEN deptPersonCount = 0 THEN 0 ELSE deptTotalTask / TOFLOAT(deptPersonCount) END AS deptAvgTaskPerPerson
 RETURN duMemberName AS DU_Member_Name,
@@ -248,7 +248,7 @@ Auto-parameterized query to list specific status deliveries for a DU
 **Cypher**
 
 ```cypher
-MATCH (manager:Person) WHERE replace(toUpper(manager.Name), " ", "") = replace(toUpper("{{manager:Person name}}", " ", "")) OPTIONAL MATCH (delivery:Delivery) WHERE delivery.DID_Status IN {{status:Delivery status}} AND (delivery.SDSL = manager.Name OR delivery.SDSA_China_PoC = manager.Name OR delivery.SDSA_US_PoC = manager.Name OR delivery.SDSA_India_PoC = manager.Name) WITH delivery.DID AS Delivery_ID, delivery.Planned_Delivery_Date AS Planned_Delivery_Date, delivery.Reporting_Event AS Reporting_Event, delivery.Study AS Study, delivery.SDSL AS Responsible_SDSL, delivery.Reporting_Detail AS Reporting_Detail RETURN Delivery_ID, Planned_Delivery_Date, Reporting_Event, Study, Responsible_SDSL, Reporting_Detail ORDER BY Planned_Delivery_Date;
+MATCH (manager:Person) WHERE replace(toUpper(manager.Name), " ", "") = replace(toUpper("{{manager:Person name}}", " ", "")) OPTIONAL MATCH (study:Study)-[:HAS_DELIVERY]->(delivery:Delivery) WHERE delivery.DID_Status IN {{status:Delivery status}} AND (delivery.SDSL = manager.Name OR study.SDSA_China_PoC = manager.Name OR study.SDSA_US_PoC = manager.Name OR study.SDSA_India_PoC = manager.Name) WITH delivery.DID AS Delivery_ID, delivery.Planned_Delivery_Date AS Planned_Delivery_Date, delivery.Reporting_Event AS Reporting_Event, delivery.Study AS Study, delivery.SDSL AS Responsible_SDSL, delivery.Reporting_Detail AS Reporting_Detail RETURN Delivery_ID, Planned_Delivery_Date, Reporting_Event, Study, Responsible_SDSL, Reporting_Detail ORDER BY Planned_Delivery_Date;
 ```
 
 ## q053: Please generate a work summary for my DU members (under manager {{manager:Person name}}) over the past {{summary_period:Months}} months and future {{plan_period:Months}} months
@@ -330,7 +330,7 @@ WHERE delivery.DID_Status = 'Completed'
   AND delivery.Year * 12 + delivery.Month <= seasonEnd
 WITH duMember.Name AS DU_Member_Name, year AS Target_Year, season + 1 AS Target_Season,
      coalesce(toFloat(worksOn.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(worksOn.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(worksOn.STD_Task_Num_Total), 0.0) + coalesce(toFloat(worksOn.esub_Data_Num_Total), 0.0)
-     + CASE WHEN duMember.Name = delivery.SDSL THEN coalesce(toFloat(delivery.CSR_Task_Num), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num), 0.0) + coalesce(toFloat(delivery.STD_Task_Num), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END AS Task_Num
+     + CASE WHEN duMember.Name = delivery.SDSL THEN coalesce(toFloat(delivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END AS Task_Num
 WITH DU_Member_Name, Target_Year, Target_Season, sum(Task_Num) AS Total_Completed_Tasks
 RETURN DU_Member_Name, Target_Year, Target_Season, Total_Completed_Tasks
 ORDER BY DU_Member_Name ASC, Target_Year ASC, Target_Season ASC
@@ -360,15 +360,15 @@ WITH manager.Name AS managerName, targetStatuses
 MATCH (manager:Person {Name: managerName})
 OPTIONAL MATCH (manager)<-[:REPORTS_TO]-(duMember:Person)
 WITH managerName, collect(duMember.Name) + [managerName] AS duMemberNames, targetStatuses
-MATCH (d:Delivery)
+MATCH (study:Study)-[:HAS_DELIVERY]->(d:Delivery)
 WHERE d.DID_Status IN targetStatuses
   AND d.Year IS NOT NULL AND d.Month IS NOT NULL
-  AND (d.SDSL IN duMemberNames OR d.SDSA_US_PoC IN duMemberNames OR d.SDSA_China_PoC IN duMemberNames OR d.SDSA_India_PoC IN duMemberNames OR d.FSP_Ephicacy_PoC IN duMemberNames OR d.FSP_Fortrea_PoC IN duMemberNames OR d.FSP_TCS_PoC IN duMemberNames OR d.FSP_Other_PoC IN duMemberNames)
+  AND (d.SDSL IN duMemberNames OR study.SDSA_US_PoC IN duMemberNames OR study.SDSA_China_PoC IN duMemberNames OR study.SDSA_India_PoC IN duMemberNames OR study.FSP_Ephicacy_PoC IN duMemberNames OR study.FSP_Fortrea_PoC IN duMemberNames OR study.FSP_TCS_PoC IN duMemberNames OR study.FSP_Other_PoC IN duMemberNames)
 OPTIONAL MATCH (respPerson:Person)
-WHERE respPerson.Name IN [d.SDSL, d.SDSA_US_PoC, d.SDSA_China_PoC, d.SDSA_India_PoC, d.FSP_Ephicacy_PoC, d.FSP_Fortrea_PoC, d.FSP_TCS_PoC, d.FSP_Other_PoC]
+WHERE respPerson.Name IN [d.SDSL, study.SDSA_US_PoC, study.SDSA_China_PoC, study.SDSA_India_PoC, study.FSP_Ephicacy_PoC, study.FSP_Fortrea_PoC, study.FSP_TCS_PoC, study.FSP_Other_PoC]
   AND respPerson.Name IN duMemberNames
 WITH d, respPerson,
-     coalesce(toFloat(d.CSR_Task_Num), 0.0) + coalesce(toFloat(d.SDA_Task_Num), 0.0) + coalesce(toFloat(d.STD_Task_Num), 0.0) + coalesce(toFloat(d.esub_Task_Data_Num), 0.0) AS TotalTasks
+     coalesce(toFloat(d.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(d.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(d.STD_Task_Num_Total), 0.0) + coalesce(toFloat(d.esub_Task_Data_Num), 0.0) AS TotalTasks
 WITH DISTINCT d.DID_Status AS Delivery_Status, d.Year AS Delivery_Year, d.Month AS Delivery_Month,
      d.DID AS DeliveryID, d.Study AS StudyName, d.Planned_Delivery_Date AS PlannedDate, TotalTasks,
      coalesce(respPerson.Name, 'Unassigned') AS ResponsibleMember
@@ -517,7 +517,7 @@ Auto-parameterized query to list specific status deliveries for a DU (duplicate 
 **Cypher**
 
 ```cypher
-MATCH (manager:Person) WHERE replace(toUpper(manager.Name), " ", "") = replace(toUpper("{{manager:Person name}}", " ", "")) OPTIONAL MATCH (delivery:Delivery) WHERE delivery.DID_Status IN {{status:Delivery status}} AND (delivery.SDSL = manager.Name OR delivery.SDSA_China_PoC = manager.Name OR delivery.SDSA_US_PoC = manager.Name OR delivery.SDSA_India_PoC = manager.Name) WITH delivery.DID AS Delivery_ID, delivery.Planned_Delivery_Date AS Planned_Delivery_Date, delivery.Reporting_Event AS Reporting_Event, delivery.Study AS Study, delivery.SDSL AS Responsible_SDSL, delivery.Reporting_Detail AS Reporting_Detail RETURN Delivery_ID, Planned_Delivery_Date, Reporting_Event, Study, Responsible_SDSL, Reporting_Detail ORDER BY Planned_Delivery_Date;
+MATCH (manager:Person) WHERE replace(toUpper(manager.Name), " ", "") = replace(toUpper("{{manager:Person name}}", " ", "")) OPTIONAL MATCH (study:Study)-[:HAS_DELIVERY]->(delivery:Delivery) WHERE delivery.DID_Status IN {{status:Delivery status}} AND (delivery.SDSL = manager.Name OR study.SDSA_China_PoC = manager.Name OR study.SDSA_US_PoC = manager.Name OR study.SDSA_India_PoC = manager.Name) WITH delivery.DID AS Delivery_ID, delivery.Planned_Delivery_Date AS Planned_Delivery_Date, delivery.Reporting_Event AS Reporting_Event, delivery.Study AS Study, delivery.SDSL AS Responsible_SDSL, delivery.Reporting_Detail AS Reporting_Detail RETURN Delivery_ID, Planned_Delivery_Date, Reporting_Event, Study, Responsible_SDSL, Reporting_Detail ORDER BY Planned_Delivery_Date;
 ```
 
 ## q060: List DU members (including myself) who do not have any deliveries for next month.
@@ -583,7 +583,7 @@ OPTIONAL MATCH (duPerson)-[w:WORKS_ON]->(completedDelivery:Delivery)
 WHERE completedDelivery.DID_Status = 'Completed'
 WITH duManager.Name AS DU_Manager_Name,
      coalesce(sum(coalesce(toFloat(w.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(w.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(w.STD_Task_Num_Total), 0.0) + coalesce(toFloat(w.esub_Data_Num_Total), 0.0)), 0.0)
-     + coalesce(sum(CASE WHEN duPerson.Name = completedDelivery.SDSL THEN coalesce(toFloat(completedDelivery.CSR_Task_Num), 0.0) + coalesce(toFloat(completedDelivery.SDA_Task_Num), 0.0) + coalesce(toFloat(completedDelivery.STD_Task_Num), 0.0) + coalesce(toFloat(completedDelivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS DU_Total_Completed_Tasks,
+     + coalesce(sum(CASE WHEN duPerson.Name = completedDelivery.SDSL THEN coalesce(toFloat(completedDelivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(completedDelivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(completedDelivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(completedDelivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS DU_Total_Completed_Tasks,
      count(DISTINCT completedDelivery) AS DU_Total_Completed_Deliveries
 RETURN DU_Manager_Name AS DU_Identifier,
        DU_Total_Completed_Tasks AS Total_Completed_Tasks_Per_DU,
@@ -656,14 +656,14 @@ WHERE replace(toUpper(you.Name), ' ', '') = replace(toUpper(yourName), ' ', '')
 OPTIONAL MATCH (you)<-[:REPORTS_TO]-(duMember:Person)
 WITH duMember, you, collect(duMember) + [you] AS yourDUMembers, minMonth, maxMonth, deptLeaderName, targetStatuses
 UNWIND yourDUMembers AS duPerson
-OPTIONAL MATCH (duDelivery:Delivery)
+OPTIONAL MATCH (duStudy:Study)-[:HAS_DELIVERY]->(duDelivery:Delivery)
 WHERE duDelivery.DID_Status IN targetStatuses
   AND (duDelivery.Year * 12 + duDelivery.Month) >= minMonth
   AND (duDelivery.Year * 12 + duDelivery.Month) <= maxMonth
-  AND (duPerson.Name = duDelivery.SDSL OR duPerson.Name = duDelivery.SDSA_China_PoC OR duPerson.Name = duDelivery.SDSA_US_PoC OR duPerson.Name = duDelivery.SDSA_India_PoC)
+  AND (duPerson.Name = duDelivery.SDSL OR duPerson.Name = duStudy.SDSA_China_PoC OR duPerson.Name = duStudy.SDSA_US_PoC OR duPerson.Name = duStudy.SDSA_India_PoC)
 WITH you.Name AS DU_Name,
      count(DISTINCT duDelivery) AS yourDu_Future_Deliveries,
-     coalesce(sum(coalesce(toFloat(duDelivery.CSR_Task_Num), 0.0) + coalesce(toFloat(duDelivery.SDA_Task_Num), 0.0) + coalesce(toFloat(duDelivery.STD_Task_Num), 0.0) + coalesce(toFloat(duDelivery.esub_Task_Data_Num), 0.0)), 0.0) AS yourDu_Future_Tasks,
+     coalesce(sum(coalesce(toFloat(duDelivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(duDelivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(duDelivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(duDelivery.esub_Task_Data_Num), 0.0)), 0.0) AS yourDu_Future_Tasks,
      minMonth, maxMonth, deptLeaderName, targetStatuses
 MATCH (deptLeader:Person)
 WHERE replace(toUpper(deptLeader.Name), ' ', '') = replace(toUpper(deptLeaderName), ' ', '')
@@ -674,14 +674,14 @@ WITH deptMember, duManager, duManager.Name AS Dept_DU_Manager,
      collect(deptMember) + [duManager] AS deptDUMembers,
      minMonth, maxMonth, DU_Name, yourDu_Future_Deliveries, yourDu_Future_Tasks, targetStatuses
 UNWIND deptDUMembers AS deptPerson
-OPTIONAL MATCH (deptDelivery:Delivery)
+OPTIONAL MATCH (deptStudy:Study)-[:HAS_DELIVERY]->(deptDelivery:Delivery)
 WHERE deptDelivery.DID_Status IN targetStatuses
   AND (deptDelivery.Year * 12 + deptDelivery.Month) >= minMonth
   AND (deptDelivery.Year * 12 + deptDelivery.Month) <= maxMonth
-  AND (deptPerson.Name = deptDelivery.SDSL OR deptPerson.Name = deptDelivery.SDSA_China_PoC OR deptPerson.Name = deptDelivery.SDSA_US_PoC OR deptPerson.Name = deptDelivery.SDSA_India_PoC)
+  AND (deptPerson.Name = deptDelivery.SDSL OR deptPerson.Name = deptStudy.SDSA_China_PoC OR deptPerson.Name = deptStudy.SDSA_US_PoC OR deptPerson.Name = deptStudy.SDSA_India_PoC)
 WITH DU_Name, yourDu_Future_Deliveries, yourDu_Future_Tasks, Dept_DU_Manager,
      count(DISTINCT deptDelivery) AS deptDu_Future_Deliveries,
-     coalesce(sum(coalesce(toFloat(deptDelivery.CSR_Task_Num), 0.0) + coalesce(toFloat(deptDelivery.SDA_Task_Num), 0.0) + coalesce(toFloat(deptDelivery.STD_Task_Num), 0.0) + coalesce(toFloat(deptDelivery.esub_Task_Data_Num), 0.0)), 0.0) AS deptDu_Future_Tasks
+     coalesce(sum(coalesce(toFloat(deptDelivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(deptDelivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(deptDelivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(deptDelivery.esub_Task_Data_Num), 0.0)), 0.0) AS deptDu_Future_Tasks
 WITH DU_Name, yourDu_Future_Deliveries, yourDu_Future_Tasks,
      collect({Dept_DU_Manager: Dept_DU_Manager, Dept_DU_Future_Deliveries: deptDu_Future_Deliveries, Dept_DU_Future_Tasks: deptDu_Future_Tasks}) AS allDeptDUs
 WITH DU_Name, yourDu_Future_Deliveries, yourDu_Future_Tasks, allDeptDUs,
@@ -722,7 +722,7 @@ WHERE delivery.DID_Status IN ['Completed']
 WITH taLeader.Name AS TA_Leader_Name,
      collect(DISTINCT delivery.DID) AS Period_Delivery_Ids,
      coalesce(sum(coalesce(toFloat(w.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(w.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(w.STD_Task_Num_Total), 0.0) + coalesce(toFloat(w.esub_Data_Num_Total), 0.0)), 0.0)
-     + coalesce(sum(CASE WHEN subordinate.Name = delivery.SDSL THEN coalesce(toFloat(delivery.CSR_Task_Num), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num), 0.0) + coalesce(toFloat(delivery.STD_Task_Num), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS Period_Total_Tasks
+     + coalesce(sum(CASE WHEN subordinate.Name = delivery.SDSL THEN coalesce(toFloat(delivery.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.STD_Task_Num_Total), 0.0) + coalesce(toFloat(delivery.esub_Task_Data_Num), 0.0) ELSE 0.0 END), 0.0) AS Period_Total_Tasks
 WITH TA_Leader_Name, size(Period_Delivery_Ids) AS Period_Total_Deliveries, Period_Total_Tasks
 WHERE Period_Total_Deliveries > 0 OR Period_Total_Tasks > 0
 RETURN TA_Leader_Name, Period_Total_Deliveries, Period_Total_Tasks
@@ -781,5 +781,5 @@ Auto-parameterized query to count DU's upcoming deliveries in next N months
 **Cypher**
 
 ```cypher
-WITH "{{manager:Person name}}" AS yourName, date() AS today, (date().year * 12 + date().month) + {{period:Months}} AS nextPeriodCode MATCH (you:Person) WHERE replace(toUpper(you.Name), " ", "") = replace(toUpper(yourName), " ", "") OPTIONAL MATCH (you)-[:REPORTS_TO]->(duManager:Person) OPTIONAL MATCH (duManager)<-[:REPORTS_TO]-(duColleague:Person) WITH you, duManager, collect(duColleague) + [you] + CASE WHEN duManager IS NOT NULL THEN [duManager] ELSE [] END AS allDuMembers, nextPeriodCode UNWIND allDuMembers AS duMember MATCH (delivery:Delivery) WHERE (delivery.Year * 12 + delivery.Month) <= nextPeriodCode AND delivery.DID_Status IN {{status:Delivery status}} AND (delivery.SDSL = duMember.Name OR delivery.SDSA_US_PoC = duMember.Name OR delivery.SDSA_China_PoC = duMember.Name OR delivery.SDSA_India_PoC = duMember.Name OR delivery.FSP_Ephicacy_PoC = duMember.Name OR delivery.FSP_Fortrea_PoC = duMember.Name OR delivery.FSP_TCS_PoC = duMember.Name OR delivery.FSP_Other_PoC = duMember.Name) AND delivery.Year IS NOT NULL AND delivery.Month IS NOT NULL RETURN you.Name AS Your_Name, duManager.Name AS DU_Manager_Name, COUNT(DISTINCT delivery.DID) AS Total_DU_Upcoming_Deliveries_Next_Period, collect(DISTINCT {DID: delivery.DID, Study_Name: delivery.Study, Planned_Delivery_Date: delivery.Planned_Delivery_Date}) AS DU_Upcoming_Delivery_Details ORDER BY Your_Name, DU_Manager_Name;
+WITH "{{manager:Person name}}" AS yourName, date() AS today, (date().year * 12 + date().month) + {{period:Months}} AS nextPeriodCode MATCH (you:Person) WHERE replace(toUpper(you.Name), " ", "") = replace(toUpper(yourName), " ", "") OPTIONAL MATCH (you)-[:REPORTS_TO]->(duManager:Person) OPTIONAL MATCH (duManager)<-[:REPORTS_TO]-(duColleague:Person) WITH you, duManager, collect(duColleague) + [you] + CASE WHEN duManager IS NOT NULL THEN [duManager] ELSE [] END AS allDuMembers, nextPeriodCode UNWIND allDuMembers AS duMember MATCH (study:Study)-[:HAS_DELIVERY]->(delivery:Delivery) WHERE (delivery.Year * 12 + delivery.Month) <= nextPeriodCode AND delivery.DID_Status IN {{status:Delivery status}} AND (delivery.SDSL = duMember.Name OR study.SDSA_US_PoC = duMember.Name OR study.SDSA_China_PoC = duMember.Name OR study.SDSA_India_PoC = duMember.Name OR study.FSP_Ephicacy_PoC = duMember.Name OR study.FSP_Fortrea_PoC = duMember.Name OR study.FSP_TCS_PoC = duMember.Name OR study.FSP_Other_PoC = duMember.Name) AND delivery.Year IS NOT NULL AND delivery.Month IS NOT NULL RETURN you.Name AS Your_Name, duManager.Name AS DU_Manager_Name, COUNT(DISTINCT delivery.DID) AS Total_DU_Upcoming_Deliveries_Next_Period, collect(DISTINCT {DID: delivery.DID, Study_Name: delivery.Study, Planned_Delivery_Date: delivery.Planned_Delivery_Date}) AS DU_Upcoming_Delivery_Details ORDER BY Your_Name, DU_Manager_Name;
 ```

@@ -29,6 +29,7 @@ Before answering query questions, read these local docs as needed:
 - `docs/examples/person_productivity.md`
 - `docs/examples/workload_planning.md`
 - `docs/examples/study_delivery.md`
+- `docs/examples/submission.md`
 - `docs/examples/lot_tlf_sdtm_adam.md`
 - `docs/examples/team_manager.md`
 - `docs/examples/reporting_dashboard.md`

@@ -68,7 +68,10 @@ EXAMPLE_KEYWORDS = {
         "dsp",
         "project_name",
         "submission lead",
+        "dataset",
+        "datasets",
         "递交",
+        "数据集",
     ),
     "lot_tlf_sdtm_adam.md": ("lot", "tlf", "sdtm", "adam", "submission", "产出物"),
     "team_manager.md": (
@@ -799,6 +802,15 @@ _CHINA_SUBMISSION_TEAM_RE = re.compile(
     re.IGNORECASE,
 )
 _SUBMISSION_KEYWORD_SKIP = {"the", "a", "an", "and", "or", "of", "for", "to"}
+_SUBMISSION_TYPE_WORDS = {"NDA", "BLA", "MAA", "SNDA", "ANDA", "IND"}
+_COMPOUND_CODE_RE = re.compile(r"^[A-Z]{1,4}\d{2,}[A-Z]?$")
+_SUBMISSION_DELIVERED_ARTIFACT_RE = re.compile(
+    r"(?:how many|number of|count(?: of)?|多少).{0,120}?"
+    r"(?:datasets?|tlfs?|sdtm|ada?m|数据集).{0,80}?"
+    r"(?:deliver\w*|已交付).{0,40}?"
+    r"(?:\bfor\b|\bof\b|\bon\b)\s+(.+?)\s+submission\b",
+    re.IGNORECASE,
+)
 _SUBMISSION_HOURS_RE = re.compile(
     r"(?:\bhours?\b|小时|工时).{0,100}?(?:on|for)\s+(.+?)\s+submission\b.{0,80}?"
     r"(?:\beach\b|\bevery\b|\bindividual\b|每个人|每人)"
@@ -873,10 +885,10 @@ WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSL)), ' ', ''
 RETURN p
 UNION
 {submission}
-MATCH (d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
-WHERE d.SDSA_China_PoC IS NOT NULL AND trim(d.SDSA_China_PoC) <> ''
+MATCH (s:Study)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+WHERE s.SDSA_China_PoC IS NOT NULL AND trim(s.SDSA_China_PoC) <> ''
 MATCH (p:Person)
-WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(d.SDSA_China_PoC)), ' ', '')
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSA_China_PoC)), ' ', '')
 RETURN p
 UNION
 {submission}
@@ -903,7 +915,7 @@ def _china_submission_team_cypher(question: str) -> str | None:
         return None
     china_site = """(
   toUpper(trim(site.Name)) = 'CHINA'
-  OR toUpper(trim(coalesce(site.Category, ''))) = 'CHINA'
+  OR toUpper(trim(coalesce(site.Site_Category, ''))) = 'CHINA'
 )"""
     people = _china_submission_people_subquery(_submission_filter(keywords), china_site)
     return f"""{people}
@@ -927,7 +939,7 @@ def _china_submission_contributor_cypher(question: str) -> str | None:
     submission = _submission_filter(keywords)
     china_site = """(
   toUpper(trim(site.Name)) = 'CHINA'
-  OR toUpper(trim(coalesce(site.Category, ''))) = 'CHINA'
+  OR toUpper(trim(coalesce(site.Site_Category, ''))) = 'CHINA'
 )"""
     return f"""{submission}
 MATCH (p:Person)-[:WORKS_ON]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
@@ -950,11 +962,11 @@ WITH p, collect(DISTINCT s.Name) AS Evidence
 RETURN p.Name AS Person, p.NTID AS NTID, 'Study SDSL' AS Contribution, Evidence
 UNION
 {submission}
-MATCH (d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
-WHERE d.SDSA_China_PoC IS NOT NULL AND trim(d.SDSA_China_PoC) <> ''
+MATCH (s:Study)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+WHERE s.SDSA_China_PoC IS NOT NULL AND trim(s.SDSA_China_PoC) <> ''
 OPTIONAL MATCH (p:Person)
-WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(d.SDSA_China_PoC)), ' ', '')
-WITH coalesce(p.Name, trim(d.SDSA_China_PoC)) AS Person, p.NTID AS NTID, collect(DISTINCT d.Name) AS Evidence
+WHERE replace(toUpper(p.Name), ' ', '') = replace(toUpper(trim(s.SDSA_China_PoC)), ' ', '')
+WITH coalesce(p.Name, trim(s.SDSA_China_PoC)) AS Person, p.NTID AS NTID, collect(DISTINCT d.Name) AS Evidence
 RETURN Person, NTID, 'China PoC' AS Contribution, Evidence
 UNION
 {submission}
@@ -970,6 +982,44 @@ WITH coalesce(p.Name, trim(s.SDSA_China_PoC)) AS Person, p.NTID AS NTID, collect
 RETURN Person, NTID, 'China PoC' AS Contribution, Evidence
 ORDER BY Person, Contribution
 LIMIT 50"""
+
+
+def _delivered_submission_keywords(text: str) -> list[str]:
+    """Compound code plus submission type. Drop dose, round, and parenthetical words."""
+    keywords: list[str] = []
+    for word in _submission_keywords(text):
+        if word in _SUBMISSION_TYPE_WORDS or _COMPOUND_CODE_RE.fullmatch(word):
+            if word not in keywords:
+                keywords.append(word)
+    return keywords
+
+
+def _submission_delivered_artifacts_cypher(question: str) -> str | None:
+    """Delivered SDTM, ADaM, and TLF counts for one named submission."""
+    match = _SUBMISSION_DELIVERED_ARTIFACT_RE.search(question or "")
+    if not match:
+        return None
+    keywords = _delivered_submission_keywords(match.group(1))
+    if not keywords:
+        return None
+    name_checks = "\n  AND ".join(
+        f"toUpper(sub.Name) CONTAINS {_quote(word)}" for word in keywords
+    )
+    return f"""MATCH (sub:Submission)
+WHERE {name_checks}
+MATCH (s:Study)-[:HAS_DELIVERY]->(d:Delivery)-[:SUPPORT_SUBMISSION]->(sub)
+WHERE d.Actual_Delivery_Date IS NOT NULL
+RETURN sub.Name AS Submission,
+       s.Name AS Study,
+       d.Name AS Delivery,
+       d.Reporting_Event AS Reporting_Event,
+       d.Planned_Delivery_Date AS Planned_Delivery_Date,
+       d.Actual_Delivery_Date AS Actual_Delivery_Date,
+       d.CSR_ADaM_Num_Total AS ADaM_Datasets,
+       d.CSR_SDTM_Num_Total AS SDTM_Datasets,
+       d.CSR_TLF_Num_Total AS TLFs
+ORDER BY d.Actual_Delivery_Date
+LIMIT 200"""
 
 
 def _submission_hours_cypher(question: str) -> str | None:
@@ -1005,6 +1055,9 @@ def template_cypher(question: str) -> str | None:
     hours_cypher = _submission_hours_cypher(question)
     if hours_cypher:
         return hours_cypher
+    delivered_cypher = _submission_delivered_artifacts_cypher(question)
+    if delivered_cypher:
+        return delivered_cypher
     team_cypher = _china_submission_team_cypher(question)
     if team_cypher:
         return team_cypher
@@ -1092,9 +1145,10 @@ Rules:
 15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.
 16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string. Do not match Name alone. This same OR applies to hours questions.
 17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern.
-18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC or Delivery.SDSA_China_PoC on a contributing study or supporting delivery. Follow submission.md.
+18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Site_Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC on a contributing study. Delivery has no PoC property. Follow submission.md.
 19. When the user asks which team supported a submission, a team is Person.Team_Lead_Name. Return distinct team lead names only. Do not list every person who worked on the submission.
-20. Study_Info includes Plan_Phase, TA, and Study_Priority via (Study)-[:HAS_DETAIL]->(Study_Info). SDSL is not a Study_Info property. Do not read SDSL from Study_Info."""
+20. Study_Info includes Plan_Phase, TA, and Study_Priority via (Study)-[:HAS_DETAIL]->(Study_Info). SDSL is not a Study_Info property. Do not read SDSL from Study_Info.
+21. For how many datasets and TLFs have been delivered for a submission, follow submission.md sub004. Match Submission.Name on the compound code and submission type only, such as B798H and NDA. Ignore dose, round, and parenthetical words. Do not match Project_Name for this question. Keep deliveries whose Actual_Delivery_Date is set. Return one row per delivery with CSR_ADaM_Num_Total AS ADaM_Datasets, CSR_SDTM_Num_Total AS SDTM_Datasets, and CSR_TLF_Num_Total AS TLFs. Do not count HAS_SDTM, HAS_ADAM, or HAS_TLF nodes."""
 
     user = f"""Schema:
 {schema_text}
@@ -1428,6 +1482,36 @@ def _format_local_answer(question: str, rows: list[dict[str, Any]]) -> str | Non
             f"匹配到 **{count}** 个 delivery，明细见下方表格。"
             if chinese
             else f"Found **{count}** matching deliveries. See the table below for details."
+        )
+
+    if {"ADaM_Datasets", "SDTM_Datasets", "TLFs"} <= set(fields):
+        def _count(value: Any) -> float:
+            try:
+                return float(value or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _count_text(value: float) -> str:
+            return str(int(value)) if value.is_integer() else f"{value:g}"
+
+        sdtm = sum(_count(row.get("SDTM_Datasets")) for row in rows)
+        adam = sum(_count(row.get("ADaM_Datasets")) for row in rows)
+        tlfs = sum(_count(row.get("TLFs")) for row in rows)
+        datasets = sdtm + adam
+        deliveries = len(rows)
+        delivery_noun = "delivery" if deliveries == 1 else "deliveries"
+        if chinese:
+            return (
+                f"已交付 **{_count_text(datasets)}** 个数据集"
+                f"（SDTM **{_count_text(sdtm)}**，ADaM **{_count_text(adam)}**）"
+                f"和 **{_count_text(tlfs)}** 个 TLF，共 **{deliveries}** 个 delivery。"
+                "各 delivery 数量见下方表格。"
+            )
+        return (
+            f"Delivered **{_count_text(datasets)}** datasets "
+            f"(**{_count_text(sdtm)}** SDTM, **{_count_text(adam)}** ADaM) "
+            f"and **{_count_text(tlfs)}** TLFs across **{deliveries}** {delivery_noun}. "
+            "Counts for each delivery are in the table below."
         )
 
     if {"Study", "DSP_Category"} <= set(fields):

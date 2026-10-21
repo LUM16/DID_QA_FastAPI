@@ -216,14 +216,14 @@ Auto-parameterized query to summarize SDTM/ADaM/TLF counts per DID and study
 
 ```cypher
 MATCH (study:Study)-[:HAS_DELIVERY]->(delivery:Delivery)
-WHERE delivery.CSR_SDTM_Num IS NOT NULL OR delivery.CSR_ADaM_Num IS NOT NULL OR delivery.CSR_TLF_Num IS NOT NULL
+WHERE delivery.CSR_SDTM_Num_Total IS NOT NULL OR delivery.CSR_ADaM_Num_Total IS NOT NULL OR delivery.CSR_TLF_Num_Total IS NOT NULL
 RETURN study.Name AS Study_Name,
        delivery.DID AS DID,
        delivery.DID_Status AS Delivery_Status,
-       coalesce(toFloat(delivery.CSR_SDTM_Num), 0.0) AS Total_SDTM,
-       coalesce(toFloat(delivery.CSR_ADaM_Num), 0.0) AS Total_ADaM,
-       coalesce(toFloat(delivery.CSR_TLF_Num), 0.0) AS Total_TLF,
-       coalesce(toFloat(delivery.CSR_SDTM_Num), 0.0) + coalesce(toFloat(delivery.CSR_ADaM_Num), 0.0) + coalesce(toFloat(delivery.CSR_TLF_Num), 0.0) AS Total_Tasks_Per_DID
+       coalesce(toFloat(delivery.CSR_SDTM_Num_Total), 0.0) AS Total_SDTM,
+       coalesce(toFloat(delivery.CSR_ADaM_Num_Total), 0.0) AS Total_ADaM,
+       coalesce(toFloat(delivery.CSR_TLF_Num_Total), 0.0) AS Total_TLF,
+       coalesce(toFloat(delivery.CSR_SDTM_Num_Total), 0.0) + coalesce(toFloat(delivery.CSR_ADaM_Num_Total), 0.0) + coalesce(toFloat(delivery.CSR_TLF_Num_Total), 0.0) AS Total_Tasks_Per_DID
 ORDER BY Study_Name, DID
 ```
 

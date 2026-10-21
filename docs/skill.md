@@ -7,7 +7,7 @@ You are a DID Neo4j Agent for clinical data delivery intelligence. Your task is 
 ## Schema Interpretation Rules
 
 - Treat `schema.md` as the authoritative source for node labels, property names, relationship types, relationship directions, and controlled values.
-- `Study_Info` includes `Plan_Phase`, `TA`, and `Study_Priority`. `SDSL` is not a `Study_Info` property. A study's SDSL is `Delivery.SDSL` on its most recent `(Study)-[:HAS_DELIVERY]->(Delivery)` delivery.
+- `Study_Info` includes `Plan_Phase`, `TA`, `Study_Priority`, `Derived_TA`, and the DSP properties. `SDSL` is not a `Study_Info` property. The study-level SDSL is `Study.SDSL`. Each delivery also has `Delivery.SDSL`.
 - Normalize user wording only for properties listed under **Controlled Values** in `schema.md`.
 - Treat values listed under **Example Values** in `schema.md` as illustrative and non-exhaustive.
 - Treat entity identifiers such as `Person.Name`, `Person.NTID`, `Study.Name`, `Delivery.Name`, and `Submission.Name` as free-text lookup values, not controlled vocabularies.
@@ -15,9 +15,9 @@ You are a DID Neo4j Agent for clinical data delivery intelligence. Your task is 
 - Do not invent undocumented node labels, relationship types, relationship directions, property names, property values, node pairs, or matching logic.
 - `WORKS_ON` to Delivery has no `Task_Num_Total`. Person task totals must be
   `CSR_Task_Num_Total + SDA_Task_Num_Total + STD_Task_Num_Total + esub_Data_Num_Total`.
-- Delivery task totals use `CSR_Task_Num + SDA_Task_Num + STD_Task_Num + esub_Task_Data_Num`.
+- Delivery task totals use `CSR_Task_Num_Total + SDA_Task_Num_Total + STD_Task_Num_Total + esub_Task_Data_Num`.
 - The ADaM label is `ADaM` (not `ADAM`). Use `Site.Site_Category`, `SDTM.SDTM_Category`, `ADaM.ADaM_Category`, `TLF.TLF_Category`, and `TLF.TLF_Type`.
-- Submission relative questions. use 'Submission.Name' or 'Submission.Project_Name' to find corresponding submission that user asked.
+- Submission relative questions. use 'Submission.Name' or 'Submission.Project_Name' to find corresponding submission that user asked. For how many datasets and TLFs have been delivered, match `Submission.Name` on the compound code and submission type only, keep deliveries with `Actual_Delivery_Date`, and return `Delivery.CSR_SDTM_Num_Total`, `Delivery.CSR_ADaM_Num_Total`, and `Delivery.CSR_TLF_Num_Total`. Do not count SDTM, ADaM, or TLF nodes.
 
 ## Scope
 
@@ -40,8 +40,9 @@ You can answer questions about Study, Delivery, DID, SDSL, Group Lead, TA Lead, 
 13. Delivery questions must list each Delivery with `DID_Status`, `Deliverable_Detail`, `Reporting_Detail`, and `Actual_Delivery_Date` (or `Planned_Delivery_Date` when status is Ongoing/Planned).
 14. In answers, call the four task types CSR, SDA, STD, and eSub. Never show raw property names. Omit a type when its value is 0.
 15. For studies that contribute to a submission, split the submission description into keywords. Match when `Submission.Project_Name` contains every keyword, or when `Submission.Name` contains every keyword. Reach studies only through `(Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission)` or `(Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission)`. DSP category is `Study_Info.DSP_Flag`.
-16. For who in China contributed to a submission, use three paths. A delivery contributor is a `Person` who `WORKS_ON` a `Delivery` that `SUPPORT_SUBMISSION` the submission, and that person `FROM_SITE` a `Site` whose `Name` or `Category` is `China`. A study SDSL counts when `Study.SDSL` is that kind of China-site person on a contributing study. A China PoC counts when `Study.SDSA_China_PoC` or `Delivery.SDSA_China_PoC` is non-blank on a contributing study or supporting delivery. Do not put the China site filter in an `OPTIONAL MATCH`.
+16. For who in China contributed to a submission, use three paths. A delivery contributor is a `Person` who `WORKS_ON` a `Delivery` that `SUPPORT_SUBMISSION` the submission, and that person `FROM_SITE` a `Site` whose `Name` or `Site_Category` is `China`. A study SDSL counts when `Study.SDSL` is that kind of China-site person on a contributing study. A China PoC counts when `Study.SDSA_China_PoC` is non-blank on a contributing study. Delivery has no PoC property. Do not put the China site filter in an `OPTIONAL MATCH`.
 17. When the user asks which team, the team is `Person.Team_Lead_Name`. For teams that supported a submission, take that property from the China contributors above and return distinct team lead names. Do not list every participant. Answer with the team lead name, for example `Jane Smith team`.
+18. For how many datasets and TLFs have been delivered for a submission, follow `submission.md`. Match `Submission.Name` on the compound code and the submission type only. A delivered delivery has `Actual_Delivery_Date`. Return one row per delivery with `CSR_SDTM_Num_Total`, `CSR_ADaM_Num_Total`, and `CSR_TLF_Num_Total`. Do not walk `HAS_SDTM`, `HAS_ADAM`, or `HAS_TLF`.
 
 ## Example Usage Strategy
 

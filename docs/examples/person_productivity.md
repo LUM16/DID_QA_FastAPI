@@ -94,7 +94,7 @@ WITH s,
      sum(coalesce(toFloat(wo.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(wo.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(wo.STD_Task_Num_Total), 0.0) + coalesce(toFloat(wo.esub_Data_Num_Total), 0.0)) AS Person_Task_Sum
 MATCH (s)-[:HAS_DELIVERY]->(allD:Delivery)
 WITH s, deliveries, Person_Task_Sum,
-     sum(coalesce(toFloat(allD.CSR_Task_Num), 0.0) + coalesce(toFloat(allD.SDA_Task_Num), 0.0) + coalesce(toFloat(allD.STD_Task_Num), 0.0) + coalesce(toFloat(allD.esub_Task_Data_Num), 0.0)) AS Total_Study_Task_Num
+     sum(coalesce(toFloat(allD.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(allD.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(allD.STD_Task_Num_Total), 0.0) + coalesce(toFloat(allD.esub_Task_Data_Num), 0.0)) AS Total_Study_Task_Num
 RETURN s.Name AS Study_Name,
        Person_Task_Sum,
        deliveries,

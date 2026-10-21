@@ -89,7 +89,7 @@ Auto-parameterized query for question
 MATCH (d:Delivery)-[:HAS_TLF]->(tlf:TLF)
 WHERE tlf.Name CONTAINS {{table_keyword1:Table keyword 1}} OR tlf.Name CONTAINS {{table_keyword2:Table keyword 2}}
 MATCH (s:Study)-[:HAS_DELIVERY]->(d)
-RETURN s.Name as Study, d.DID, tlf.Name as Table_Title, tlf.Category, tlf.Type
+RETURN s.Name as Study, d.DID, tlf.Name as Table_Title, tlf.TLF_Category, tlf.Type
 ORDER BY s.Name, d.DID
 ```
 
@@ -190,7 +190,7 @@ Auto-parameterized query for question
 MATCH (d:Delivery)-[:HAS_TLF]->(tlf:TLF)
 WHERE tlf.Name CONTAINS {{table_keyword1:Table keyword 1}} OR tlf.Name CONTAINS {{table_keyword2:Table keyword 2}}
 MATCH (s:Study)-[:HAS_DELIVERY]->(d)
-RETURN s.Name as Study, d.DID, tlf.Name as Table_Title, tlf.Category, tlf.Type
+RETURN s.Name as Study, d.DID, tlf.Name as Table_Title, tlf.TLF_Category, tlf.Type
 ORDER BY s.Name, d.DID
 ```
 

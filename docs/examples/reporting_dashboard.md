@@ -17,11 +17,11 @@ OPTIONAL MATCH (sdsl)-[:REPORTS_TO*1..]->(taLead:Person)
 WHERE taLead.TA_Lead IS NOT NULL AND taLead.TA_Lead <> ''
 RETURN
   s.Name AS Study_Name,
-  SUM(coalesce(toFloat(d.CSR_TLF_Num), 0.0)) AS TLF_Volume,
+  SUM(coalesce(toFloat(d.CSR_TLF_Num_Total), 0.0)) AS TLF_Volume,
   d.SDSL AS SDSL,
   groupLead.Name AS Group_Lead,
   taLead.Name AS TA_Lead,
-  s.TA AS TA,
+  info.TA AS TA,
   info.Plan_Phase AS Plan_Phase,
   info.Plan_Status AS Plan_Status,
   info.Study_Type AS Study_Type,
@@ -51,11 +51,11 @@ OPTIONAL MATCH (sdsl)-[:REPORTS_TO*1..]->(taLead:Person)
 WHERE taLead.TA_Lead IS NOT NULL AND taLead.TA_Lead <> ''
 RETURN
   s.Name AS Study_Name,
-  SUM(coalesce(toFloat(d.CSR_TLF_Num), 0.0)) AS TLF_Volume,
+  SUM(coalesce(toFloat(d.CSR_TLF_Num_Total), 0.0)) AS TLF_Volume,
   d.SDSL AS SDSL,
   groupLead.Name AS Group_Lead,
   taLead.Name AS TA_Lead,
-  s.TA AS TA,
+  info.TA AS TA,
   info.Plan_Phase AS Plan_Phase,
   info.Plan_Status AS Plan_Status,
   info.Study_Type AS Study_Type,
@@ -86,11 +86,11 @@ OPTIONAL MATCH (sdsl)-[:REPORTS_TO*1..]->(taLead:Person)
 WHERE taLead.TA_Lead IS NOT NULL AND taLead.TA_Lead <> ''
 RETURN
   s.Name AS Study_Name,
-  SUM(coalesce(toFloat(d.CSR_TLF_Num), 0.0)) AS TLF_Volume,
+  SUM(coalesce(toFloat(d.CSR_TLF_Num_Total), 0.0)) AS TLF_Volume,
   d.SDSL AS SDSL,
   groupLead.Name AS Group_Lead,
   taLead.Name AS TA_Lead,
-  s.TA AS TA,
+  info.TA AS TA,
   info.Plan_Phase AS Plan_Phase,
   info.Plan_Status AS Plan_Status,
   info.Study_Type AS Study_Type,
@@ -114,7 +114,7 @@ WITH
   d.Reporting_Detail AS Reporting_Detail,
   d.Planned_Delivery_Date AS Planned_Date,
   d.Actual_Delivery_Date AS Actual_Date,
-  coalesce(toFloat(d.CSR_Task_Num), 0.0) + coalesce(toFloat(d.SDA_Task_Num), 0.0) + coalesce(toFloat(d.STD_Task_Num), 0.0) + coalesce(toFloat(d.esub_Task_Data_Num), 0.0) AS Task,
+  coalesce(toFloat(d.CSR_Task_Num_Total), 0.0) + coalesce(toFloat(d.SDA_Task_Num_Total), 0.0) + coalesce(toFloat(d.STD_Task_Num_Total), 0.0) + coalesce(toFloat(d.esub_Task_Data_Num), 0.0) AS Task,
   toInteger(SUM(dm.Hour)) AS Delivery_HandsOn_Hours
 RETURN
   Study_Name,
@@ -189,7 +189,7 @@ RETURN
   s.Name AS Study_Name,
   s.SDSL AS SDSL_Name,
   site.Name AS Site,
-  s.TA AS TA,
+  info.TA AS TA,
   info.Plan_Phase AS Plan_Phase,
   info.Plan_Status AS Plan_Status,
   info.Study_Type AS Study_Type,
@@ -216,7 +216,7 @@ RETURN
   s.SDSL AS SDSL_Name,
   groupLead.Name AS Group_Lead,
   taLead.Name AS TA_Lead,
-  s.TA AS TA,
+  info.TA AS TA,
   info.Plan_Phase AS Plan_Phase,
   info.Plan_Status AS Plan_Status,
   info.Study_Type AS Study_Type,
@@ -235,9 +235,9 @@ OPTIONAL MATCH (d)-[sdtmRel:HAS_SDTM]->(sdtm:SDTM)
 OPTIONAL MATCH (d)-[adamRel:HAS_ADAM]->(adam:ADaM)
 OPTIONAL MATCH (d)-[tlfRel:HAS_TLF]->(tlf:TLF)
 WITH d,
-  collect(DISTINCT {Category: sdtm.Category, Type: sdtm.Type, Name: sdtm.Name, Generation: sdtmRel.Generation, QC: sdtmRel.QC}) +
-  collect(DISTINCT {Category: adam.Category, Type: adam.Type, Name: adam.Name, Generation: adamRel.Generation, QC: adamRel.QC}) +
-  collect(DISTINCT {Category: tlf.Category, Type: tlf.Type, Name: tlf.Name, Source: tlf.Source, Generation: tlfRel.Generation, QC: tlfRel.QC, File_Name: tlfRel.File_Name, TLF_Number: tlfRel.TLF_Number}) AS allItems
+  collect(DISTINCT {Category: sdtm.SDTM_Category, Type: sdtm.Type, Name: sdtm.Name, Generation: sdtmRel.Generation, QC: sdtmRel.QC}) +
+  collect(DISTINCT {Category: adam.ADaM_Category, Type: adam.Type, Name: adam.Name, Generation: adamRel.Generation, QC: adamRel.QC}) +
+  collect(DISTINCT {Category: tlf.TLF_Category, Type: tlf.Type, Name: tlf.Name, Source: tlf.Source, Generation: tlfRel.Generation, QC: tlfRel.QC, File_Name: tlfRel.File_Name, TLF_Number: tlfRel.TLF_Number}) AS allItems
 UNWIND allItems AS item
 RETURN
   d.Name AS DID,
@@ -265,9 +265,9 @@ WHERE adamRel.Generation CONTAINS "{{person_name}}" OR adamRel.QC CONTAINS "{{pe
 OPTIONAL MATCH (d)-[tlfRel:HAS_TLF]->(tlf:TLF)
 WHERE tlfRel.Generation CONTAINS "{{person_name}}" OR tlfRel.QC CONTAINS "{{person_name}}"
 WITH d, w, p,
-  collect(DISTINCT {Category: sdtm.Category, Type: sdtm.Type, Name: sdtm.Name, Generation: sdtmRel.Generation, QC: sdtmRel.QC}) +
-  collect(DISTINCT {Category: adam.Category, Type: adam.Type, Name: adam.Name, Generation: adamRel.Generation, QC: adamRel.QC}) +
-  collect(DISTINCT {Category: tlf.Category, Type: tlf.Type, Name: tlf.Name, Source: tlf.Source, Generation: tlfRel.Generation, QC: tlfRel.QC, File_Name: tlfRel.File_Name, TLF_Number: tlfRel.TLF_Number}) AS filteredItems
+  collect(DISTINCT {Category: sdtm.SDTM_Category, Type: sdtm.Type, Name: sdtm.Name, Generation: sdtmRel.Generation, QC: sdtmRel.QC}) +
+  collect(DISTINCT {Category: adam.ADaM_Category, Type: adam.Type, Name: adam.Name, Generation: adamRel.Generation, QC: adamRel.QC}) +
+  collect(DISTINCT {Category: tlf.TLF_Category, Type: tlf.Type, Name: tlf.Name, Source: tlf.Source, Generation: tlfRel.Generation, QC: tlfRel.QC, File_Name: tlfRel.File_Name, TLF_Number: tlfRel.TLF_Number}) AS filteredItems
 UNWIND filteredItems AS item
 RETURN
   d.Name AS DID,

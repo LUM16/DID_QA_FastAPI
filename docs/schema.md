@@ -19,6 +19,7 @@ Properties:
 - `FSP_Other_PoC`
 - `IPort_Study`
 - `SharePoint_ID`
+- `Request_Type`
 
 ### Delivery
 
@@ -27,6 +28,8 @@ Properties:
 - `Name`
 - `DID`
 - `DID_Status`
+- `Work_Type`
+- `Deliverable_Detail`
 - `Reporting_Event`
 - `Reporting_Detail`
 - `Draft_or_Final`
@@ -38,10 +41,10 @@ Properties:
 - `Reporting_System`
 - `Delivery_Content`
 - `Study`
-- `SDTM_Num`
-- `ADAM_Num`
-- `TLF_Num`
-- `Task_Num`
+- `CSR_SDTM_Num_Total`
+- `CSR_ADaM_Num_Total`
+- `CSR_TLF_Num_Total`
+- `CSR_Task_Num_Total`
 - `Year`
 - `Month`
 - `ID_in_Portfolio_Milestone_list1`
@@ -49,7 +52,24 @@ Properties:
 - `ID_in_Portfolio_Milestone_list3`
 - `ID_in_Portfolio_Milestone_list4`
 - `ID_in_Portfolio_Milestone_list5`
-- `Total_Task_Num`
+- `Urgent_Request`
+- `Resource_Distribution_Type`
+- `Resource_Distribution`
+- `Linked_DID`
+- `ReDelivery`
+- `Reason_for_ReDelivery`
+- `SDA_Task_Num_Total`
+- `STD_Task_Num_Total`
+- `STD_Category`
+- `esub_Task_Data_Num`
+- `esub_Task_Xpts_Num`
+- `esub_Task_Acrf_Num`
+- `esub_Task_AcrfReview_Num`
+- `esub_Task_Define_Num`
+- `esub_Task_Drg_Num`
+- `esub_Task_DrgQms_Num`
+- `esub_Task_SasProgram_Num`
+- `Submission_Work`
 
 ### Study_Info
 
@@ -59,6 +79,8 @@ Properties:
 - `Plan_Status`
 - `Plan_Phase`
 - `Study_Type`
+- `Study_Priority`
+- `Derived_TA`
 - `FAP`
 - `FSFV`
 - `LSLV`
@@ -81,7 +103,6 @@ Properties:
 - `Project_Code`
 - `Project_Name`
 - `TA`
-- `Study_Priority`
 - `Indications`
 - `DSP_Apply_2_Step`
 - `DSP_US_Site`
@@ -93,14 +114,14 @@ Properties:
 - `DSP_Nexus_Flag`
 - `DSP_Nexus_Country`
 
-`SDSL` is not a `Study_Info` property. A study's SDSL is `Delivery.SDSL` on its most recent delivery, reached by `(Study)-[:HAS_DELIVERY]->(Delivery)`. Most recent means the delivery with the latest `Actual_Delivery_Date` or `Planned_Delivery_Date`. When neither date is set, use the latest `Year` and then `Month`.
+`SDSL` is not a `Study_Info` property. The study-level SDSL is `Study.SDSL`. Each delivery also has `Delivery.SDSL`.
 
 ### Site
 
 Properties:
 
 - `Name`
-- `Category`
+- `Site_Category`
 
 ### Unblind
 
@@ -113,19 +134,19 @@ Properties:
 Properties:
 
 - `Name`
+- `Email`
+- `NTID`
+- `Site`
 - `Manager`
 - `Group_Lead`
 - `TA_Lead`
-- `Email`
-- `NTID`
-- `Status`
-- `Onboard_Date`
-- `Offboard_Date`
-- `Offboard_Year`
-- `Service_Year`
 - `Team_Lead_Name`
 - `Group_Lead_Name`
 - `TA_Lead_Name`
+- `Onboard_Date`
+- `Offboard_Date`
+- `Status`
+- `Service_Year`
 
 ### DID0
 
@@ -172,15 +193,15 @@ Properties:
 Properties:
 
 - `Name`
-- `Category`
+- `SDTM_Category`
 - `Type`
 
-### ADAM
+### ADaM
 
 Properties:
 
 - `Name`
-- `Category`
+- `ADaM_Category`
 - `Type`
 
 ### TLF
@@ -188,7 +209,9 @@ Properties:
 Properties:
 
 - `Name`
-- `Category`
+- `File_Name`
+- `TLF_Category`
+- `TLF_Type`
 - `Type`
 - `Source`
 
@@ -210,6 +233,44 @@ Properties:
 - `Project_Generic_Name`
 - `Project_Trade_Name`
 
+### Task_Force
+
+Properties:
+
+- `Name`
+- `BID`
+- `BID_0`
+- `BID_Lead`
+- `BID_Desc`
+- `Start_Date`
+- `Planned_Delivery_Date`
+- `Actual_Delivery_Date`
+- `Delivery_Frequency`
+- `Repeated_Delivery`
+
+Goal properties are named `Goal_{year}_S{semester}`, for example `Goal_2025_S2`.
+
+### BID_0
+
+Properties:
+
+- `Name`
+- `BID_0`
+- `Title`
+- `Initiative_Lead`
+- `China_POC`
+- `India_POC`
+- `BID_0_Desc`
+
+Goal properties are named `Goal_BID0_{year}_S{semester}`, for example `Goal_BID0_2025_S2` and `Goal_BID0_2026_S1`.
+
+### BID_Cat
+
+Properties:
+
+- `Name`
+- `Category`
+
 ## Relationships
 
 ### Study-related relationships
@@ -225,7 +286,7 @@ Properties:
 ```cypher
 (Delivery)-[:IS_UNBLIND_SUPPORT]->(Unblind)
 (Delivery)-[:HAS_SDTM {Generation, QC}]->(SDTM)
-(Delivery)-[:HAS_ADAM {Generation, QC}]->(ADAM)
+(Delivery)-[:HAS_ADAM {Generation, QC}]->(ADaM)
 (Delivery)-[:HAS_TLF {Generation, QC, File_Name, TLF_Number}]->(TLF)
 (Delivery)-[:SUPPORT_SUBMISSION]->(Submission)
 ```
@@ -243,19 +304,36 @@ Properties:
 (Person)-[:FROM_SITE]->(Site)
 (Person)-[:REPORTS_TO]->(Person)
 (Person)-[:WORKS_ON {
-  TLF_Num_Total,
-  TLF_Num_Generation,
-  TLF_Num_QC,
-  ADaM_Num_Total,
-  ADaM_Num_Generation,
-  ADaM_Num_QC,
-  SDTM_Num_Total,
-  SDTM_Num_Generation,
-  SDTM_Num_QC,
-  Task_Num_Total,
-  Task_Num_Generation,
-  Task_Num_QC
+  CSR_TLF_Num_Total,
+  CSR_TLF_Num_Generation,
+  CSR_TLF_Num_QC,
+  CSR_ADaM_Num_Total,
+  CSR_ADaM_Num_Generation,
+  CSR_ADaM_Num_QC,
+  CSR_SDTM_Num_Total,
+  CSR_SDTM_Num_Generation,
+  CSR_SDTM_Num_QC,
+  CSR_Task_Num_Total,
+  CSR_Task_Num_Generation,
+  CSR_Task_Num_QC,
+  SDA_Task_Num_Total,
+  SDA_Task_Num_Generation,
+  SDA_Task_Num_QC,
+  STD_Task_Num_Total,
+  STD_Task_Num_Generation,
+  STD_Task_Num_QC,
+  esub_Data_Num_Total,
+  esub_Data_Num_Generation,
+  esub_Data_Num_QC,
+  esub_Xpts_Num,
+  esub_Acrf_Num,
+  esub_AcrfReview_Num,
+  esub_Define_Num,
+  esub_Drg_Num,
+  esub_DrgQms_Num,
+  esub_SasProgram_Num
 }]->(Delivery)
+(Person)-[:WORKS_ON {Role, Task}]->(Task_Force)
 (Person)-[:LEADS_SUBMISSION]->(Submission)
 ```
 
@@ -270,6 +348,8 @@ Properties:
 (Person)-[:TIME_ON {Hour, DID_Type}]->(Study_Month)
 (Person)-[:TIME_ON {From_Date, To_Date, Hour}]->(DID0_Month)
 (Person)-[:TIME_ON {From_Date, To_Date, Hour}]->(DIDN_Month)
+(BID_0)-[:BELONGS_TO]->(BID_Cat)
+(Task_Force)-[:BELONGS_TO]->(BID_0)
 ```
 
 ## Controlled Values
