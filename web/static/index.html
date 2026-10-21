@@ -35,7 +35,6 @@
   header{display:flex;align-items:center;gap:14px;padding:10px 18px;background:var(--panel);
          border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
   header h1{font-size:16px;margin:0;font-weight:600}
-  header .sub{color:var(--muted);font-size:12px}
   .spacer{flex:1}
   select,button,input{font:inherit;color:var(--text)}
   select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
@@ -57,11 +56,12 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
   .ok{background:var(--high)} .bad{background:var(--low)}
-  main{max-width:1040px;margin:0 auto;padding:18px 18px 140px}
+  main{max-width:1040px;margin:0 auto;padding:18px 18px 240px}
   .msg{margin:14px 0;display:flex;gap:10px}
-  .msg.user{flex-direction:row-reverse}
+  .msg.user{justify-content:flex-start}
   .bubble{max-width:92%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:normal}
-  .user .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+  .user .bubble{background:var(--accent);color:#fff;border-bottom-left-radius:3px;width:fit-content}
+  .qmark{margin-right:6px}
   .ai .bubble{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:3px;width:100%}
   .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-bottom:8px}
   .badge{padding:1px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
@@ -95,8 +95,20 @@
   .fb-note{display:block;width:100%;min-height:58px;resize:vertical;margin:6px 0;padding:6px 8px;
            color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;font:inherit}
   canvas{background:var(--canvas-bg);border:1px solid var(--line);border-radius:8px;max-width:100%}
-  .composer{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(transparent,var(--bg) 30%);
+  .composer{position:fixed;left:0;right:0;bottom:0;z-index:7;background:linear-gradient(transparent,var(--bg) 30%);
             padding:16px 0 18px}
+  #utility{position:fixed;z-index:6;left:18px;bottom:86px;display:flex;flex-direction:column;
+           align-items:flex-start;gap:8px;max-width:min(760px,calc(100vw - 36px));padding:8px 10px;
+           background:var(--panel);border:1px solid var(--line);border-radius:10px;
+           box-shadow:0 6px 18px rgba(0,0,0,.12)}
+  #utility .util-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  #copilot-tools:not(:has(> :not([hidden]))){display:none}
+  #utility label{font-size:12px}
+  #utility input{width:148px}
+  #utility button{padding:5px 8px;font-size:12px}
+  #copilot-status{font-size:12px}
+  body.sb #utility{left:268px}
+  body:has(.composer[hidden]) #utility{bottom:12px}
   .composer .box{max-width:1040px;margin:0 auto;padding:0 18px;display:flex;gap:10px}
   .composer input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;
                   padding:12px 14px}
@@ -164,10 +176,7 @@
 </aside>
 <header>
   <button id="btn-toggle-sb" class="iconbtn" title="Show/hide history sidebar">☰</button>
-  <div>
-    <h1>DID Insight</h1>
-    <div class="sub">Neo4j natural-language Q&amp;A agent</div>
-  </div>
+  <h1>DID Insight</h1>
   <div class="spacer"></div>
   <span id="health" class="muted"><span class="dot bad"></span>Checking…</span>
   <label class="chk" title="Auto-switch to the graph view when relationship or org data is returned">
@@ -181,19 +190,25 @@
       <option value="vox">vox (Voxpy/OAuth)</option>
     </select>
   </label>
-  <label id="copilot-token-wrap" class="muted" hidden>GitHub token
-    <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." />
-  </label>
-  <label id="copilot-ntid-wrap" class="muted" hidden>NTID
-    <input id="copilot-ntid" type="text" autocomplete="username" placeholder="user.name" />
-  </label>
-  <button id="copilot-save" hidden type="button">Save token</button>
-  <button id="copilot-help" class="iconbtn" hidden type="button" title="How to get a GitHub token" aria-label="How to get a GitHub token">?</button>
-  <span id="copilot-status" class="muted" hidden></span>
-  <button id="btn-stats" title="Learning statistics">Stats</button>
-  <button id="btn-improve" title="Distill failures into rules">Self-improve</button>
-  <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
 </header>
+<div id="utility">
+  <div class="util-row" id="copilot-tools">
+    <label id="copilot-token-wrap" class="muted" hidden>GitHub token
+      <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." />
+    </label>
+    <label id="copilot-ntid-wrap" class="muted" hidden>NTID
+      <input id="copilot-ntid" type="text" autocomplete="username" placeholder="user.name" />
+    </label>
+    <button id="copilot-save" hidden type="button">Save token</button>
+    <button id="copilot-help" class="iconbtn" hidden type="button" title="How to get a GitHub token" aria-label="How to get a GitHub token">?</button>
+    <span id="copilot-status" class="muted" hidden></span>
+  </div>
+  <div class="util-row">
+    <button id="btn-stats" title="Learning statistics">Stats</button>
+    <button id="btn-improve" title="Distill failures into rules">Self-improve</button>
+    <button id="btn-schema" title="Refresh the live schema">Refresh Schema</button>
+  </div>
+</div>
 <dialog id="copilot-help-dialog" aria-labelledby="copilot-help-title">
   <h2 id="copilot-help-title">Get a GitHub Copilot Token</h2>
   <ol>
@@ -347,7 +362,7 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.style.display='block
 function addUser(q){
   conv.push({role:'user',content:q});
   const d=document.createElement('div');d.className='msg user';
-  d.innerHTML=`<div class="bubble">${esc(q)}</div>`;chat.appendChild(d);scroll();
+  d.innerHTML=`<div class="bubble"><span class="qmark" aria-hidden="true">🐬</span>${esc(q)}</div>`;chat.appendChild(d);scroll();
 }
 
 function confBadge(c){const map={high:'b-high',medium:'b-med',low:'b-low'};const t={high:'High confidence',medium:'Medium confidence',low:'Low confidence'};
@@ -1057,7 +1072,7 @@ async function refreshHealth(){
     if(llmOk) tips.push(llm.api||'Vox reachable');
     else tips.push(llmErr||'Vox unreachable');
     $('#health').title=tips.join('\n');
-    $('#health').innerHTML=`<span class="dot ${neo?'ok':'bad'}"></span>Neo4j ${neo?'connected':'disconnected'} · <span class="dot ${llmOk?'ok':'bad'}"></span>LLM: ${esc(llmOk?prov:prov+' unreachable')}`;
+    $('#health').innerHTML=`<span class="dot ${neo?'ok':'bad'}"></span>Neo4j ${neo?'connected':'disconnected'}`;
   }catch(e){$('#health').innerHTML='<span class="dot bad"></span>Health check failed';}
 }
 
