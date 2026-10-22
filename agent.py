@@ -1091,7 +1091,6 @@ LIMIT 1"""
 {status_filter}RETURN d.Name AS Delivery,
        d.DID AS DID,
        d.DID_Status AS Status,
-       d.Deliverable_Detail AS Deliverable_Detail,
        d.Reporting_Detail AS Reporting_Detail,
        d.Actual_Delivery_Date AS Actual_Delivery_Date,
        d.Planned_Delivery_Date AS Planned_Delivery_Date
@@ -1141,8 +1140,8 @@ Rules:
 11. When user-endorsed thumbs-up examples are provided, prefer those Cypher patterns if they match the question.
 12. For org-chart / reporting-tree questions, prefer the scalar template columns person, reporting_level, reports_to, status so the UI can render both a table and an organization chart. reports_to is the direct (Person)-[:REPORTS_TO]->(Person) manager for every row, including reporting_level 0. Do not replace that manager with an empty list. Use an empty list only when the person has no REPORTS_TO relationship.
 13. WORKS_ON has no Task_Num_Total.
-14. If the user asks about tasks, return one row per Delivery with aliases Delivery, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date, CSR, SDA, STD, eSub. CSR/SDA/STD/eSub must be the four WORKS_ON task totals. Do not return only SUM() as a single total. Do not alias columns to raw names like CSR_Task_Num_Total.
-15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Deliverable_Detail, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.
+14. If the user asks about tasks, return one row per Delivery with aliases Delivery, Status, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date, CSR, SDA, STD, eSub. CSR/SDA/STD/eSub must be the four WORKS_ON task totals. Do not return only SUM() as a single total. Do not alias columns to raw names like CSR_Task_Num_Total.
+15. If the user asks about deliveries, return one row per Delivery with Delivery, DID, Status, Reporting_Detail, Actual_Delivery_Date, Planned_Delivery_Date. Do not return only a count.
 16. For a submission described by product or indication words, split those words into separate keywords. A Submission matches when Project_Name contains every keyword, or when Name contains every keyword. Use toUpper and CONTAINS on each keyword. Do not CONTAINS the whole phrase as one string. Do not match Name alone. This same OR applies to hours questions.
 17. Studies contribute to a submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not connect Study directly to SDTM, ADaM, or TLF, and do not use SUPPORT_SUBMISSION on those labels. DSP category is Study_Info.DSP_Flag via (Study)-[:HAS_DETAIL]->(Study_Info). Follow submission.md for this pattern.
 18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Site_Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC on a contributing study. Delivery has no PoC property. Follow submission.md.
@@ -1251,7 +1250,7 @@ def answer_from_rows(
             "omit any of those four that are 0 or null. Do not mention raw graph "
             "property names such as CSR_Task_Num_Total, SDA_Task_Num_Total, "
             "STD_Task_Num_Total, or esub_Data_Num_Total. "
-            "Include DID_Status, Deliverable_Detail, and Reporting_Detail when present. "
+            "Include DID_Status and Reporting_Detail when present. "
             "Use Actual_Delivery_Date for completed deliveries and Planned_Delivery_Date "
             "for Ongoing or Planned deliveries."
         )

@@ -28,7 +28,6 @@ WHERE replace(toUpper(p.Name), " ", "") = replace(toUpper("{{person:Person name}
 RETURN d.Name AS Delivery,
        d.DID AS DID,
        d.DID_Status AS Status,
-       d.Deliverable_Detail AS Deliverable_Detail,
        d.Reporting_Detail AS Reporting_Detail,
        d.Actual_Delivery_Date AS Actual_Delivery_Date,
        d.Planned_Delivery_Date AS Planned_Delivery_Date,
