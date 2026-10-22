@@ -57,13 +57,18 @@
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
   .ok{background:var(--high)} .bad{background:var(--low)}
   main{max-width:1040px;margin:0 auto;padding:18px 18px 140px}
-  .msg{margin:14px 0;display:flex;gap:10px}
-  .msg.user{justify-content:flex-start;align-items:center}
+  .msg{margin:14px 0;display:flex;gap:10px;align-items:flex-start}
+  .msg.user{justify-content:flex-start}
   .bubble{max-width:92%;padding:10px 14px;border-radius:12px;line-height:1.6;white-space:normal}
   .user .bubble{background:var(--accent);color:#fff;border:1px solid var(--accent);
                border-bottom-left-radius:3px;width:fit-content}
-  .qmark{flex:none;margin-right:8px;font-size:18px;line-height:1}
-  .ai .bubble{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:3px;width:100%}
+  .avatar{flex:none;width:28px;height:28px;margin-top:8px;border-radius:50%;
+          display:inline-flex;align-items:center;justify-content:center;line-height:1;
+          background:var(--panel);border:1px solid var(--line)}
+  .avatar.user{color:var(--accent)}
+  .avatar.insight{font-size:16px}
+  .ai .bubble{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:3px;
+              flex:1;min-width:0;max-width:none;width:auto}
   .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-bottom:8px}
   .badge{padding:1px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
   .b-high{color:var(--high);border-color:var(--high)} .b-med{color:var(--med);border-color:var(--med)}
@@ -230,7 +235,7 @@
 <script src="static/planning.js" defer></script>
 
 <main id="chat">
-  <div class="msg ai"><div class="bubble">
+  <div class="msg ai"><span class="avatar insight" role="img" title="DID Insight" aria-label="DID Insight">🐬</span><div class="bubble">
     Hi, I'm DID Insight. Ask a question in English or Chinese, for example:
     <ul>
       <li>How many deliveries to be completed next month?</li>
@@ -254,6 +259,8 @@ const $ = s => document.querySelector(s);
 const chat = $('#chat');
 const conv = [];                       // conversation sent to the backend
 let lastCaseId = null;
+const USER_AVATAR = '<span class="avatar user" title="You" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></span>';
+const INSIGHT_AVATAR = '<span class="avatar insight" role="img" title="DID Insight" aria-label="DID Insight">🐬</span>';
 
 // ---- query history sidebar (persisted) ----
 const LS_HIST='did2_history_v1', LS_AUTOG='did2_autograph', LS_SB='did2_sidebar';
@@ -359,7 +366,7 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.style.display='block
 function addUser(q){
   conv.push({role:'user',content:q});
   const d=document.createElement('div');d.className='msg user';
-  d.innerHTML=`<span class="qmark" aria-hidden="true">🐬</span><div class="bubble">${esc(q)}</div>`;chat.appendChild(d);scroll();
+  d.innerHTML=`${USER_AVATAR}<div class="bubble">${esc(q)}</div>`;chat.appendChild(d);scroll();
 }
 
 function confBadge(c){const map={high:'b-high',medium:'b-med',low:'b-low'};const t={high:'High confidence',medium:'Medium confidence',low:'Low confidence'};
@@ -395,11 +402,7 @@ function addResult(r){
   const consumption = r.provider==='github_copilot'
     ? 'Copilot billing usage unavailable'
     : `${Number(r.total_tokens??usage.total_tokens??0).toLocaleString()} tokens (${Number(r.prompt_tokens??usage.prompt_tokens??0).toLocaleString()} in / ${Number(r.completion_tokens??usage.completion_tokens??0).toLocaleString()} out)`;
-  const attempts = (r.attempts||[]).map((a,i)=>{
-    const st = a.error?`❌ ${esc(a.error)}`:(a.row_count>0?`✅ ${a.row_count} rows`:'0 rows');
-    return `<div><strong>Attempt ${i+1}</strong> — ${st}${a.cypher?`<pre><code>${esc(a.cypher)}</code></pre>`:''}${a.feedback?`<div class="muted">↳ ${esc(a.feedback)}</div>`:''}</div>`;
-  }).join('');
-  d.innerHTML = `<div class="bubble">
+  d.innerHTML = `${INSIGHT_AVATAR}<div class="bubble">
     <div class="meta">
       ${confBadge(r.confidence)}
       <span>${esc(r.provider||'')}${r.model?' / '+esc(r.model):''}${r.fallback_used?' (fallback)':''}</span>
@@ -407,10 +410,9 @@ function addResult(r){
       ${r.timings_ms?`<details><summary>Stage timings</summary><div class="inner"><pre><code>${esc(Object.entries(r.timings_ms).map(([stage,ms])=>`${stage}: ${ms}ms`).join('\n'))}</code></pre></div></details>`:''}
     </div>
     ${renderMarkdown(r.answer)}
+    <div class="result-tabs" data-id="${r.case_id||''}"></div>
     ${renderEntityDetails(r.entity_details)}
     ${r.cypher?`<details><summary>🔍 Final Cypher</summary><div class="inner"><pre><code>${esc(r.cypher)}</code></pre></div></details>`:''}
-    ${attempts?`<details><summary>🧪 Execution &amp; self-correction</summary><div class="inner">${attempts}</div></details>`:''}
-    <div class="result-tabs" data-id="${r.case_id||''}"></div>
     <div class="fb">
       <span class="muted">Was this helpful? Your feedback improves similar future queries.</span>
       <button class="up" type="button" aria-pressed="false">👍 Yes</button>
@@ -959,7 +961,7 @@ function renderPersonChoice(data, originalQuestion, provider){
   const run=async(extra)=>{
     box.querySelectorAll('button').forEach(b=>{b.disabled=true;});
     const thinking=document.createElement('div');thinking.className='msg ai';
-    thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
+    thinking.innerHTML=`${INSIGHT_AVATAR}<div class="bubble muted">Thinking…</div>`;chat.appendChild(thinking);scroll();
     try{
       const r=await api('/api/query',Object.assign({question:originalQuestion,history:conv.slice(-12),provider,
         ...(provider==='github_copilot'?{github_token:copilotToken(),...copilotIdentityPayload()}:{}),
@@ -968,18 +970,18 @@ function renderPersonChoice(data, originalQuestion, provider){
       if(r.needs_person_choice){renderPersonChoice(r,originalQuestion,provider);return;}
       showResolvedQuestion(r, originalQuestion);
       addResult(r);
-    }catch(e){thinking.innerHTML=`<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
+    }catch(e){thinking.innerHTML=`${INSIGHT_AVATAR}<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
   };
   const abort=()=>{
     box.querySelectorAll('button').forEach(b=>{b.disabled=true;});
     const d=document.createElement('div');d.className='msg ai';
-    d.innerHTML='<div class="bubble muted">Aborted — the question was not sent.</div>';
+    d.innerHTML=`${INSIGHT_AVATAR}<div class="bubble muted">Aborted — the question was not sent.</div>`;
     chat.appendChild(d);scroll();
   };
 
   if(data.unmatched_only){
     const names=(data.unmatched||[]).map(n=>`“${esc(n)}”`).join(', ');
-    box.innerHTML=`<div class="bubble">
+    box.innerHTML=`${INSIGHT_AVATAR}<div class="bubble">
       <div>I could not match ${names} to anyone on the roster.</div>
       <div class="muted" style="font-size:12px;margin-top:4px">Continue with your original wording, or abort without querying.</div>
       <div style="margin-top:8px">
@@ -1009,7 +1011,7 @@ function renderPersonChoice(data, originalQuestion, provider){
     ? `<div class="muted" style="font-size:12px;margin-top:6px">Already matched: ${
         settled.map(it=>`“${esc(it.mention)}” → ${esc(it.default)}`).join(', ')}</div>`
     : '';
-  box.innerHTML=`<div class="bubble">
+  box.innerHTML=`${INSIGHT_AVATAR}<div class="bubble">
     <div>Please confirm who each name refers to before I run the query:</div>
     ${rows}
     ${known}
@@ -1032,7 +1034,7 @@ function showResolvedQuestion(r, originalQuestion){
   const q=r.question||'';
   if(!q || q===originalQuestion) return;
   const d=document.createElement('div');d.className='msg ai';
-  d.innerHTML=`<div class="bubble muted" style="font-size:12px">
+  d.innerHTML=`${INSIGHT_AVATAR}<div class="bubble muted" style="font-size:12px">
     Resolved question: <span style="color:var(--c-text)">${esc(q)}</span></div>`;
   chat.appendChild(d);scroll();
 }
@@ -1044,7 +1046,7 @@ async function ask(preset){
   if(preset===undefined) inp.value='';
   addUser(q); recordHistory(q);
   const thinking=document.createElement('div');thinking.className='msg ai';
-  thinking.innerHTML='<div class="bubble muted">Thinking…</div>';chat.appendChild(thinking);scroll();
+  thinking.innerHTML=`${INSIGHT_AVATAR}<div class="bubble muted">Thinking…</div>`;chat.appendChild(thinking);scroll();
   const provider=selectedProvider();
   try{
     if(provider==='github_copilot') await resolvePositConnectNtid();
@@ -1054,7 +1056,7 @@ async function ask(preset){
     showResolvedQuestion(r, q);
     addResult(r);
     if(r.improve_report&&r.improve_report.status==='ok') toast(`Self-improvement: added ${r.improve_report.rules_added} rule(s)`);
-  }catch(e){thinking.innerHTML=`<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
+  }catch(e){thinking.innerHTML=`${INSIGHT_AVATAR}<div class="bubble">Request failed: ${esc(e.message)}</div>`;}
 }
 
 async function refreshHealth(){
