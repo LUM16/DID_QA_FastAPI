@@ -123,6 +123,13 @@ Properties:
 - `Name`
 - `Site_Category`
 
+
+### Office
+
+Properties:
+
+- `Name`
+
 ### Unblind
 
 Properties:
@@ -352,6 +359,17 @@ Properties:
 (Task_Force)-[:BELONGS_TO]->(BID_0)
 ```
 
+
+### COMMUTES_TO relationships
+
+```cypher
+(Person)-[:COMMUTES_TO {
+  Commute_Mode,
+  Commute_Time_Minutes
+}]->(Office)
+```
+
+
 ## Controlled Values
 
 Normalize user wording only for properties listed in this section. Use the exact value and capitalization shown below.
@@ -447,6 +465,14 @@ Valid values:
 
 - `TRUE`
 - `FALSE`
+
+
+### `Office.Name`
+
+Valid values:
+
+- `Shanghai`
+- `Wuhan`
 
 ## Example Values
 
