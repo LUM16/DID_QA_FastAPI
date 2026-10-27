@@ -19,6 +19,8 @@
 | `planning_api.py` / `match_person.py` | 规划上传 API / 原有人名消歧 |
 | `artifacts/*.joblib` / `provenance.json` | 四个原始 LFS 产物及 SHA-256 来源校验 |
 | `agent.py` | 自然语言 → Cypher → 回答 |
+| `question_retrieval.py` | 无分类全题库 TF-IDF Top 3 检索 |
+| `docs/question_bank_review.json` | 运行时必需的离线审核、双语检索文本及源内容哈希 |
 | `neo4j_client.py` | Neo4j 只读查询 |
 | `vox_client.py` | Vox GenAI OAuth + 对话 |
 | `docs/` | DID 规则与 examples（用于 few-shot 提示） |
@@ -108,6 +110,7 @@ Get-Content .env -ErrorAction SilentlyContinue | Select-Object -First 1
 git init -b main
 
 git add app.py agent.py neo4j_client.py vox_client.py requirements.txt
+git add question_retrieval.py docs\question_bank_review.json
 git add docs\skill.md docs\schema.md docs\examples\*.md
 git add .github\agents\did-neo4j-qa.agent.md
 git add manifest.json .python-version .gitignore .rscignore .env.example
@@ -118,6 +121,14 @@ git status
 ```
 
 如果 `git status` 里出现 `.env`，先停下来，检查 `.gitignore` 后再继续。
+
+检索默认使用 `QUESTION_RETRIEVAL_MODE=flat_tfidf`，不按分类限制候选题目。
+发布时必须同时包含完整 examples 和 `docs/question_bank_review.json`。
+修改题目或 Cypher 后，需重新离线审核并更新源哈希，否则检索会明确报错。
+在 Connect Vars 设置 `QUESTION_RETRIEVAL_MODE=legacy_prefix` 可回退旧版
+文件前缀检索。离线对照另需 `benchmark_question_retrieval.py` 和
+`docs/question_retrieval_eval.json`，详见
+[检索对照报告](docs/question_retrieval_comparison.md)。
 
 ```powershell
 git commit -m "Add Git-backed Posit Connect deployment for DID Q&A"

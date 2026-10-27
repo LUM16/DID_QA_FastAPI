@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from functools import lru_cache
@@ -35,6 +36,12 @@ COUNT_QUERY_RE = re.compile(r"\b(?:how many|count|number of)\b|多少|数量", r
 NEXT_MONTH_RE = re.compile(r"\bnext month\b|下个月", re.IGNORECASE)
 from entity_profiles import prepare_entity_presentation
 from result_presentation import select_result_presentation, table_from_rows
+from question_retrieval import (
+    DEFAULT_EXAMPLES,
+    EXAMPLE_KEYWORDS,
+    retrieve_context,
+    select_example_files,
+)
 from vox_client import add_usage, chat as _chat, empty_usage
 
 log = logging.getLogger(__name__)
@@ -44,62 +51,6 @@ APP_ROOT = Path(__file__).resolve().parent
 DOCS_ROOT = APP_ROOT / "docs"
 EXAMPLES_ROOT = DOCS_ROOT / "examples"
 
-EXAMPLE_KEYWORDS = {
-    "person_productivity.md": (
-        "person",
-        "productivity",
-        "hands-on",
-        "hour",
-        "hours",
-        "task",
-        "tasks",
-        "complete",
-        "completed",
-        "workload",
-        "ntid",
-        "员工",
-        "工时",
-        "任务",
-    ),
-    "workload_planning.md": ("capacity", "plan", "planned", "ongoing", "workload", "resource", "规划", "负载"),
-    "study_delivery.md": ("study", "delivery", "did", "status", "里程碑", "交付"),
-    "submission.md": (
-        "submission",
-        "dsp",
-        "project_name",
-        "submission lead",
-        "dataset",
-        "datasets",
-        "递交",
-        "数据集",
-    ),
-    "lot_tlf_sdtm_adam.md": ("lot", "tlf", "sdtm", "adam", "submission", "产出物"),
-    "team_manager.md": (
-        "manager",
-        "group lead",
-        "ta lead",
-        "team",
-        "reports to",
-        "org",
-        "org chart",
-        "organization",
-        "hierarchy",
-        "经理",
-        "团队",
-        "组织",
-    ),
-    "reporting_dashboard.md": ("dashboard", "kpi", "trend", "monthly", "reporting", "看板", "报表"),
-}
-DEFAULT_EXAMPLES = (
-    "query_index.md",
-    "study_delivery.md",
-    "workload_planning.md",
-    "person_productivity.md",
-    "lot_tlf_sdtm_adam.md",
-    "team_manager.md",
-    "reporting_dashboard.md",
-    "uncategorized.md",
-)
 SAFE_EXAMPLE_FILES = tuple(
     name for name in DEFAULT_EXAMPLES if name != "sensitive_excluded.md"
 )
@@ -685,21 +636,7 @@ def _read_doc(relative_path: str) -> str:
 
 
 def _select_examples(question: str, limit: int = MAX_EXAMPLE_FILES) -> list[str]:
-    q = question.lower()
-    scored: list[tuple[int, str]] = []
-    for filename, keywords in EXAMPLE_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw in q)
-        if score > 0:
-            scored.append((score, filename))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    selected = [name for _, name in scored[:limit]]
-    if len(selected) < limit:
-        for fallback in DEFAULT_EXAMPLES:
-            if fallback not in selected:
-                selected.append(fallback)
-            if len(selected) >= limit:
-                break
-    return selected[:limit]
+    return select_example_files(question, limit)
 
 
 def _build_domain_context(question: str) -> str:
@@ -713,7 +650,10 @@ def _build_domain_context(question: str) -> str:
         schema_text,
     ]
 
-    selected = _select_examples(question)
+    load_env()
+    retrieval_mode = os.environ.get("QUESTION_RETRIEVAL_MODE", "flat_tfidf").strip()
+    if retrieval_mode not in {"flat_tfidf", "legacy_prefix"}:
+        raise ValueError(f"Unsupported QUESTION_RETRIEVAL_MODE: {retrieval_mode!r}")
     try:
         endorsed = format_positive_examples(get_memory().positive_examples(question, limit=3))
         rejected = format_negative_examples(get_memory().negative_examples(question, limit=2))
@@ -724,6 +664,10 @@ def _build_domain_context(question: str) -> str:
     if rejected:
         parts.extend(["", rejected])
 
+    if retrieval_mode == "flat_tfidf":
+        parts.extend(["", retrieve_context(question)])
+
+    selected = _select_examples(question) if retrieval_mode == "legacy_prefix" else ()
     for filename in selected:
         example_path = EXAMPLES_ROOT / filename
         if not example_path.exists():

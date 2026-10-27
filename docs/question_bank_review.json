@@ -1,0 +1,1286 @@
+{
+  "version": 1,
+  "reviews": [
+    {
+      "id": "q000",
+      "question": "How many tasks did a person complete in a month?",
+      "retrieval_text": "How many tasks did a person complete in a month? List a person's finished deliveries with separate CSR SDA STD eSub counts for a calendar month. 统计个人某月已完成交付及各项任务数量。 Person WORKS_ON Delivery Actual_Delivery_Date Completed.",
+      "issues": [
+        "LIMIT 50 can truncate a month containing more than 50 deliveries; the answer must disclose truncation."
+      ],
+      "source_sha256": "4cdc8dbadb339ea4630ceb1a90b64a72d8ef2f23796ba7677db96e21d9657a95"
+    },
+    {
+      "id": "q001",
+      "question": "Summarize the my deliveries during a certain time period",
+      "retrieval_text": "Summarize the my deliveries during a certain time period. Review a person's delivery output between start and end dates, including TLF volume and task counts. 汇总个人指定时间段的交付、TLF和任务量。 Person Delivery WORKS_ON.",
+      "issues": [
+        "Returns only aggregate totals instead of the per-delivery CSR/SDA/STD/eSub breakdown required by skill.md.",
+        "Person matching is exact rather than case/space-insensitive; no Completed status filter is applied."
+      ],
+      "source_sha256": "f37777e9f5796a2f551fc52553251b83f550df3afa64f60a24ae00d4553bcaea"
+    },
+    {
+      "id": "q002",
+      "question": "Summarize which studies I participated in delivering during a certain period. For each study, how many tasks were delivered? What percentage of the study's total tasks were delivered?",
+      "retrieval_text": "Summarize which studies I participated in delivering during a certain period. For each study, how many tasks were delivered? What percentage of the study's total tasks were delivered? Measure individual contribution to study task volume and percentage over a date interval. 按研究汇总个人交付任务及占研究总量比例。 Study Delivery Person WORKS_ON HAS_DELIVERY.",
+      "issues": [
+        "Numerator is date-filtered but denominator includes every delivery in the study across all dates and statuses; percentage scope is ambiguous.",
+        "Returns study totals instead of required per-delivery task rows."
+      ],
+      "source_sha256": "9b50bcce31ca47b3fe26f28c507fdf93485d68f13ee04a6a5dccfe03c7f77508"
+    },
+    {
+      "id": "q003",
+      "question": "How many TLFs were completed in the past year?",
+      "retrieval_text": "How many TLFs were completed in the past year? Count one person's tables listings figures during a rolling year using CSR_TLF_Num_Total. 统计个人过去一年完成的表格列表图形数量。 Person Delivery Actual_Delivery_Date.",
+      "issues": [
+        "Question and business intent sound global, but query requires a person.",
+        "Actual date range is checked without DID_Status = Completed."
+      ],
+      "source_sha256": "2ae7472fda48bf30e9b872a9830263c587e206f50378c327b35b64d9b2b92cdb"
+    },
+    {
+      "id": "q005",
+      "question": "How many datasets or tables are associated with each DID, and how many hours were spent on each DID?",
+      "retrieval_text": "How many datasets or tables are associated with each DID, and how many hours were spent on each DID? Pair delivery dataset/table volume with an individual's logged effort. 每个DID的数据集或表格数量以及个人投入工时。 Person TIME_ON DIDN_Month Delivery SDTM ADaM TLF.",
+      "issues": [
+        "Returns only hours; no dataset or table counts are computed.",
+        "Person placeholder is unquoted for string substitution; missing required delivery detail/status fields."
+      ],
+      "source_sha256": "32d87833feff421db1523c9e8311e0addee1fc57c509c76ffa8c2e075d9f7500"
+    },
+    {
+      "id": "q006",
+      "question": "Which studies and domains have I participated in?",
+      "retrieval_text": "Which studies and domains have I participated in? Find a person's study participation and SDTM domain experience. 查看个人参与过的研究及SDTM域。 Person WORKS_ON Study Delivery HAS_SDTM.",
+      "issues": [
+        "Infers responsibility for every SDTM in a worked-on delivery without checking HAS_SDTM.Generation/QC.",
+        "Mandatory HAS_SDTM excludes studies without SDTM."
+      ],
+      "source_sha256": "66e3c36f339cdb10c37b57baebed9c3fe541f4ad93ee306957d58cbaf8f784a6"
+    },
+    {
+      "id": "q007",
+      "question": "Which domains have I worked on in the past period, how many times, and which ones were the most and least frequent?",
+      "retrieval_text": "Which domains have I worked on in the past period, how many times, and which ones were the most and least frequent? Rank SDTM experience frequency within dates and flag tied extremes. 统计一段时间内个人域经验次数及最多最少的域。 Person SDTM Delivery Actual_Delivery_Date.",
+      "issues": [
+        "Counts deliveries containing SDTM domains, not confirmed individual Generation/QC assignments."
+      ],
+      "source_sha256": "b217a33f90fe48bd4af378b28d8ca68e81b2616b3fb485aefbbfc3e44fe42898"
+    },
+    {
+      "id": "q008",
+      "question": "Which studies have I participated in, sorted by TA and domain?",
+      "retrieval_text": "Which studies have I participated in, sorted by TA and domain? Order personal study history by therapeutic area and SDTM domain. 按治疗领域TA和域排序个人参与的研究。 Study_Info.TA Study SDTM Person.",
+      "issues": [
+        "Parameter JSON has a trailing comma.",
+        "Mandatory SDTM matching drops other studies; individual domain responsibility is not verified."
+      ],
+      "source_sha256": "a1e7976f99d7a4905f5ebb384f56f5eb9a1ab2e771ce1c391cbde955ac7a7904"
+    },
+    {
+      "id": "q009",
+      "question": "How many hours did I work on study XXXX in the past two weeks?",
+      "retrieval_text": "How many hours did I work on study XXXX in the past two weeks? Sum an individual's recent study effort across delivery time records. 查询个人最近十四天在指定研究的工时。 Person TIME_ON DIDN_Month Study From_Date Hour.",
+      "issues": [
+        "Query placeholder stduy_name is misspelled relative to study_name; string placeholders are unquoted.",
+        "Filters only From_Date lower bound, excludes overlapping records starting earlier, has no today upper bound, and omits DID0 effort."
+      ],
+      "source_sha256": "3293d58c5c06661b60b8ad5eb498dc97b34aebf670e6288b8d099ef040a4c0ee"
+    },
+    {
+      "id": "q010",
+      "question": "Please summarize the delivery efficiency of the past two weeks",
+      "retrieval_text": "Please summarize the delivery efficiency of the past two weeks. Relate recent personal delivery task output to hands-on time and hours per task. 汇总个人最近两周交付效率及每任务工时。 Person Delivery TIME_ON WORKS_ON.",
+      "issues": [
+        "Joining multiple DIDN_Month records repeats WORKS_ON task totals and distorts hours per task.",
+        "Filters delivery dates rather than time-record dates; returns totals only, not required per-delivery rows."
+      ],
+      "source_sha256": "7ba40b29ba85c1a9c82ba7f9e1fe79b50314ca4649a6b277e9ff0cbfaac247ba"
+    },
+    {
+      "id": "q011",
+      "question": "How much time does it take to complete one task based on the tasks I worked on in the past six months?",
+      "retrieval_text": "How much time does it take to complete one task based on the tasks I worked on in the past six months? Estimate personal average hours per task from half-year history. 根据个人过去半年任务和工时计算单位任务耗时。 Person TIME_ON DIDN_Month WORKS_ON Delivery.",
+      "issues": [
+        "Task denominator is duplicated for deliveries with multiple monthly time records.",
+        "Delivery-date filtering includes all logged months for qualifying deliveries; task output is aggregate only."
+      ],
+      "source_sha256": "a54d57c982cd705776522f5171328cf24e063db11ab7791638d849df29c57811"
+    },
+    {
+      "id": "q012",
+      "question": "Please analyze the status of DIDs over the past 6 months and time spent on each",
+      "retrieval_text": "Please analyze the status of DIDs over the past 6 months and time spent on each. Show recent personal DID status alongside summed effort. 分析个人过去六个月每个DID的状态和投入工时。 Delivery DID_Status TIME_ON DIDN_Month.",
+      "issues": [
+        "Query does not return DID_Status despite explicit request.",
+        "Unquoted person placeholder; actual-date filter omits undelivered active DIDs and does not restrict time-record dates."
+      ],
+      "source_sha256": "04907234d13978385c717eb6d7708024263210c3c5c18fde759a9238e4124370"
+    },
+    {
+      "id": "q013",
+      "question": "Which DID did I spend the most time on in the past two weeks?",
+      "retrieval_text": "Which DID did I spend the most time on in the past two weeks? Identify the delivery consuming the greatest recent personal effort. 找出个人近两周投入工时最多的DID。 TIME_ON DIDN_Month Hour Delivery.",
+      "issues": [
+        "Filters Actual_Delivery_Date instead of time-record dates, with no today upper bound.",
+        "Unquoted person placeholder; returns all ranked DIDs rather than selecting the maximum or tied maxima."
+      ],
+      "source_sha256": "ccb8b6d1cede207a0cf1b96f3a1d5f3990414354ce32527d2e44396d3ba4be7e"
+    },
+    {
+      "id": "q015",
+      "question": "Which domains have been worked on in the past period, and how many times?",
+      "retrieval_text": "Which domains have been worked on in the past period, and how many times? Count personal SDTM Generation or QC experience between dates. 统计指定期间实际承担编程或质控的SDTM域及次数。 Person HAS_SDTM Generation QC Delivery.",
+      "issues": [
+        "Date expressions have missing closing parentheses and malformed placeholders, so Cypher is not executable.",
+        "Unquoted person placeholder; membership assumes Generation and QC each contain one exact name."
+      ],
+      "source_sha256": "c6a6171e3f086445ce99e06a818d21b9ab6540cb08b9e5acf302e6b024a6051d"
+    },
+    {
+      "id": "q016",
+      "question": "Please help me summarize goals for direct report(s) to fill in the PLI system",
+      "retrieval_text": "Please help me summarize goals for direct report(s) to fill in the PLI system. Prepare semester staff accomplishments using study, TLF and task volumes for a manager's direct reports. 为直属下属准备PLI半年工作目标参考，汇总研究、TLF和任务。 REPORTS_TO WORKS_ON.",
+      "issues": [
+        "Provides historical accomplishment counts rather than proposed goals; no Completed filter.",
+        "Returns employee aggregate task totals instead of required per-delivery task breakdown."
+      ],
+      "source_sha256": "c3445ccb07628fc37c7a6c57d5d8d9eb4d85dcb5731106448ca4530114ba7137"
+    },
+    {
+      "id": "q017",
+      "question": "Please tell me which deliveries are coming in the next 3 months weeks",
+      "retrieval_text": "Please tell me which deliveries are coming in the next 3 months weeks. Find a person's upcoming scheduled deliveries over a configurable month horizon. 查询个人未来三个月到期的交付计划。 Delivery Planned_Delivery_Date Person WORKS_ON.",
+      "issues": [
+        "Heading ambiguously mixes months and weeks; query uses months.",
+        "Parameter JSON has trailing comma and person string is unquoted; delivery status and detail fields are omitted."
+      ],
+      "source_sha256": "ea35c10414d3eee0c77de26acf28afd36658fd95aab20ae9cba92ad5ebd61059"
+    },
+    {
+      "id": "q018",
+      "question": "Please list the deliveries I am involved in and their delivery dates in the next two weeks, sorted by priority",
+      "retrieval_text": "Please list the deliveries I am involved in and their delivery dates in the next two weeks, sorted by priority. Order imminent personal deliveries by due date. 列出个人未来两周交付及日期并按优先顺序排列。 Delivery Planned_Delivery_Date Urgent_Request.",
+      "issues": [
+        "Priority is represented only by date ordering, not Urgent_Request or another declared priority rule.",
+        "Required delivery status and detail fields are missing."
+      ],
+      "source_sha256": "0e257fb584d6ec0567e3a72651427614230bcedd035a6c5eaf2cbedc3a5499af"
+    },
+    {
+      "id": "q019",
+      "question": "Please summarize the planned delivery dates and the remaining days for all ongoing deliveries",
+      "retrieval_text": "Please summarize the planned delivery dates and the remaining days for all ongoing deliveries. List a person's active work with due dates and countdown days. 查看个人进行中交付的计划日期及剩余天数。 Ongoing Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Question says all ongoing deliveries but query restricts to one person.",
+        "Unquoted person placeholder and missing delivery detail/status return fields."
+      ],
+      "source_sha256": "df43638e2a419ac0688c5b8ba8998eeb23f201b5fdbb331fd24ba397549f41b6"
+    },
+    {
+      "id": "q020",
+      "question": "Please summarize my delivery as SPL in the next three months",
+      "retrieval_text": "Please summarize my delivery as SPL in the next three months. Retrieve future study deliveries associated with a person's leadership role. 汇总个人担任SPL的未来三个月研究交付。 Person WORKS_AS Role Study Delivery SDSL POC.",
+      "issues": [
+        "SPL is assumed to mean WORKS_AS roles SDSL or POC without documented equivalence.",
+        "Unquoted person placeholder; study names, status and required delivery details are not returned."
+      ],
+      "source_sha256": "38c86a3b4cb81c7f25d70db76d0ff29831079539def1aa3668a358a8386012d3"
+    },
+    {
+      "id": "q021",
+      "question": "Please list the weekly work progress for the next two weeks, with a minimum work completion for each week",
+      "retrieval_text": "Please list the weekly work progress for the next two weeks, with a minimum work completion for each week. Group future personal delivery assignments by week with task workload minima and maxima. 按周汇总个人未来两周任务量及最低最高交付量。 Planned_Delivery_Date WORKS_ON CSR SDA STD eSub.",
+      "issues": [
+        "MIN(Week_Task) measures the smallest delivery assignment, not an agreed weekly minimum completion target.",
+        "Returns weekly aggregate totals rather than required per-delivery task breakdown; no active-status filter."
+      ],
+      "source_sha256": "fcd9135adbcf116218605be3f98f801017a411ca7a7dc4c9e54f3f01372e9c87"
+    },
+    {
+      "id": "q022",
+      "question": "Based on my lot allocation, predict my workload",
+      "retrieval_text": "Based on my lot allocation, predict my workload. Estimate future personal effort from assigned SDTM ADaM TLF generation and quality-control counts. 根据LoT分工预测个人工作量，查看编程和QC任务。 WORKS_ON Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Returns assigned counts without a predictive effort model or future upper bound.",
+        "Alias Task_Num_Total is explicitly prohibited by skill.md; CSR/SDA/STD/eSub breakdown and delivery details are missing."
+      ],
+      "source_sha256": "730b4fc838ee15be280455262c570be0547e6e991e70bb15e10778e5355e3f2e"
+    },
+    {
+      "id": "q023",
+      "question": "Please list my work for the next six months",
+      "retrieval_text": "Please list my work for the next six months. Show an individual's half-year upcoming delivery schedule. 列出个人未来半年工作和交付时间安排。 Person WORKS_ON Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Does not filter to Ongoing/Planned and omits required delivery status/detail fields."
+      ],
+      "source_sha256": "a02053428e6a31b786d1d334e560608d3e0a31f35abfc01caa897bf736255267"
+    },
+    {
+      "id": "q024",
+      "question": "Please summarize the deliveries and tasks for the next one month/six months",
+      "retrieval_text": "Please summarize the deliveries and tasks for the next one month/six months. Separate near-term and half-year personal delivery work with task quantities. 汇总个人未来一个月和六个月的交付及任务。 Delivery WORKS_ON Planned_Delivery_Date.",
+      "issues": [
+        "WORKS_ON is matched but task counts are never returned.",
+        "Uses disjoint less-than-30-day versus later buckets, not nested one-month and six-month totals; person placeholder is unquoted."
+      ],
+      "source_sha256": "764727ee932004d23c68793f9edcb491b181ec6daea0c7110facfe7e95f08359"
+    },
+    {
+      "id": "q025",
+      "question": "How many tables/listings/figures need to be generated/QC'd within the next month?",
+      "retrieval_text": "How many tables/listings/figures need to be generated/QC'd within the next month? Count a person's upcoming TLF programming and quality-control assignments separately. 统计个人下月需编程和质控的表格、列表、图形。 TLF HAS_TLF Generation QC Planned_Delivery_Date.",
+      "issues": [
+        "TLF.Type is not in schema.md; use documented TLF.TLF_Type when adapting.",
+        "Person placeholder is unquoted; QC branch hardcodes one month while generation uses months parameter."
+      ],
+      "source_sha256": "0fa381add51ecb4ddac104dcd54a85bfe329f94f8e29d599afda585132d29ebe"
+    },
+    {
+      "id": "q026",
+      "question": "Please provide a clear delivery timeline for the next three months in the form of a schedule",
+      "retrieval_text": "Please provide a clear delivery timeline for the next three months in the form of a schedule. Produce a dated personal delivery calendar for the next quarter. 生成个人未来三个月清晰交付日程表。 Person Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Unquoted person placeholder; lacks active-status filter and required delivery details."
+      ],
+      "source_sha256": "f2ca7ddcd28eef2b5bfb888c468b5907f5e331edaa684f875dcc8d096fbe03ab"
+    },
+    {
+      "id": "q028",
+      "question": "Can you give me a To-Do list, telling me which tasks should be prioritized, and which tasks are more urgent?",
+      "retrieval_text": "Can you give me a To-Do list, telling me which tasks should be prioritized, and which tasks are more urgent? Build a personal action list using impending due dates and urgency. 生成个人待办清单，识别优先任务与紧急交付。 Delivery Planned_Delivery_Date Urgent_Request WORKS_ON.",
+      "issues": [
+        "Returns only delivery names and dates, not tasks or urgency, and ignores Urgent_Request.",
+        "Unquoted person placeholder; omits required task and delivery return fields."
+      ],
+      "source_sha256": "eed756a362ccb0a0cb61429805b691f1c4cde173ace4a307d0e4e9ebe9692bd7"
+    },
+    {
+      "id": "q029",
+      "question": "Estimate the work hours required for the next three months' workload based on standard work efficiency",
+      "retrieval_text": "Estimate the work hours required for the next three months' workload based on standard work efficiency. Multiply future personal task assignments by historical hours per task. 根据历史单位任务效率估算个人未来三个月所需工时。 Person TIME_ON WORKS_ON Delivery.",
+      "issues": [
+        "Uses one person's historical mean rather than a documented standard efficiency; no Completed or future active-status filter.",
+        "Returns a total future task count, not required CSR/SDA/STD/eSub breakdown and delivery details."
+      ],
+      "source_sha256": "56cd7211e0f6e4fccc278e70bca614ebdeb2d908f9af6d17319ee79978ddfecf"
+    },
+    {
+      "id": "q030",
+      "question": "Please organize the final tasks for this week from the dLoT that I need to be responsible for, and list by study",
+      "retrieval_text": "Please organize the final tasks for this week from the dLoT that I need to be responsible for, and list by study. Extract this week's personal SDTM ADaM TLF generation/QC assignments by study. 按研究整理本周个人负责的dLoT最终编程和质控工作。 HAS_SDTM HAS_ADAM HAS_TLF.",
+      "issues": [
+        "TLF branch reads t.Type rather than documented TLF_Type.",
+        "Uses rolling next week, not calendar week, and never filters Draft_or_Final; parameter JSON has trailing comma."
+      ],
+      "source_sha256": "5b66164c895c2357fafa01b916b2c7d022021e04f39d4e830fd91ad8a4770fe6"
+    },
+    {
+      "id": "q038",
+      "question": "Calculate which DIDs I should work on in the next few weeks and months. Please estimate the time required for each week or each month for these DIDs.",
+      "retrieval_text": "Calculate which DIDs I should work on in the next few weeks and months. Please estimate the time required for each week or each month for these DIDs. Project personal weekly/monthly DID commitments and required effort. 估算个人未来数周数月的DID任务安排与工时。 WORKS_ON Delivery Planned_Delivery_Date.",
+      "issues": [
+        "No hour estimation is performed; output contains task counts only.",
+        "Parameter person_name differs from person placeholder; time buckets are overlapping labels made disjoint by CASE and not calendar weeks/months."
+      ],
+      "source_sha256": "d0de30d9341eabdba114ef3c4bcd6e218468aaa44963fbb45818dd02a42d668e"
+    },
+    {
+      "id": "q039",
+      "question": "The total duration is 40 hours; what is the percentage of time each project takes this week?",
+      "retrieval_text": "The total duration is 40 hours; what is the percentage of time each project takes this week? Apportion a forty-hour workweek across studies using workload and due-date weights. 将每周四十小时按项目工作量和紧迫度分配并计算比例。 Delivery Study WORKS_ON Planned_Delivery_Date.",
+      "issues": [
+        "No this-week upper date bound; includes all future non-Completed work, including Cancelled.",
+        "Adds SDTM/ADaM/TLF counts to task totals, potentially double-counting work; weighting is heuristic, not observed time.",
+        "Parameter person_name differs from person placeholder."
+      ],
+      "source_sha256": "853183520fde504129fa6afff0699ab9b9301a3becce9e9e77d82b6c7ca1f89b"
+    },
+    {
+      "id": "q040",
+      "question": "Please tell me which deliveries have been completed for a specific study, and what the timelines are.",
+      "retrieval_text": "Please tell me which deliveries have been completed for a specific study, and what the timelines are. Compare planned and actual dates of finished study deliveries. 查询指定研究已完成交付及计划实际日期差异。 Study HAS_DELIVERY Delivery Completed.",
+      "issues": [
+        "Study node property map is missing its closing brace after the placeholder and string is unquoted.",
+        "Required deliverable/reporting details and returned status are omitted."
+      ],
+      "source_sha256": "822267317333d4196051c94f82be25956308307802648a185bc80a808a376480"
+    },
+    {
+      "id": "q042",
+      "question": "Compare the efficiency of my tasks between the first and second halves of the year.",
+      "retrieval_text": "Compare the efficiency of my tasks between the first and second halves of the year. Contrast personal task output, hours and hours per task between S1 and S2. 对比个人上下半年任务效率和单位任务工时。 Person WORKS_ON TIME_ON DIDN_Month DID0_Month Study_Month.",
+      "issues": [
+        "Summing TIME_ON across Study_Month and DID0/DIDN_Month may double-count the same underlying effort.",
+        "Parameter person_name differs from person placeholder; no Completed filter or per-delivery breakdown."
+      ],
+      "source_sha256": "ac5211631bc0dbf737f9967fa83d5434beeead34bfa9d87c7ced5cc106f50862"
+    },
+    {
+      "id": "q043",
+      "question": "The timeline of the studies I have participated in.",
+      "retrieval_text": "The timeline of the studies I have participated in. Show personal study delivery milestones and earliest/latest planned dates. 展示个人参与研究的交付时间线和计划起止。 Person Study Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Person node property map lacks a closing brace and the person string is unquoted.",
+        "Study start/end are inferred from delivery planned dates, not actual study milestones; required delivery detail/status fields missing."
+      ],
+      "source_sha256": "9650e7ebf6a755f03961449f4f5b83c85f2b87a1a25b24b60fe22a6bb563ae5e"
+    },
+    {
+      "id": "q045",
+      "question": "Which studies have my DU members (under manager {{manager:Person name}}) participated in, and what domain are involved",
+      "retrieval_text": "Which studies have my DU members (under manager {{manager:Person name}}) participated in, and what domain are involved. Find direct reports' study participation and assigned SDTM domains. 查询经理直属DU成员参与的研究及实际承担的域。 Person REPORTS_TO WORKS_ON HAS_SDTM.",
+      "issues": [
+        "Name-normalization expression passes three arguments to toUpper and leaves outer replace incomplete.",
+        "Domains are limited to SDTM rather than also ADaM/TLF."
+      ],
+      "source_sha256": "3ac7375e9467d64710f821bde848991bf433918c2ce6f3505296e9f1c6fc88ee"
+    },
+    {
+      "id": "q046",
+      "question": "Please summarize how many tasks were delivered by my DU (under manager {{manager:Person name}}) in S1 and S2 of {{year:Year}}",
+      "retrieval_text": "Please summarize how many tasks were delivered by my DU (under manager {{manager:Person name}}) in S1 and S2 of {{year:Year}}. Compare manager and direct-report task production across semesters. 汇总经理及直属成员指定年份上下半年交付任务。 REPORTS_TO Delivery WORKS_ON Completed.",
+      "issues": [
+        "targetYear is referenced in the same WITH projection where it is introduced; requires a separate projection.",
+        "Delivery-level totals are repeated for each participating DU person; output lacks per-delivery task breakdown."
+      ],
+      "source_sha256": "bd5a4f3c802b6c65343b788a11b8c42d87ffa84ce4588433f8d9151bf524c85b"
+    },
+    {
+      "id": "q047",
+      "question": "Please summarize the total number of tasks completed by my DU (under manager {{manager:Person name}}) from {{start_month:Month}} {{start_year:Year}} to the present, list all DIDs, and provide a breakdown by person",
+      "retrieval_text": "Please summarize the total number of tasks completed by my DU (under manager {{manager:Person name}}) from {{start_month:Month}} {{start_year:Year}} to the present, list all DIDs, and provide a breakdown by person. Report cumulative DU accomplishments with member DID lists. 从指定年月起按成员汇总DU已完成任务及DID。 REPORTS_TO WORKS_ON Actual_Delivery_Date.",
+      "issues": [
+        "Adds the entire delivery task count to the SDSL's personal task count without a documented attribution rule, risking double-counting.",
+        "Returns parallel member lists and aggregate totals instead of per-delivery CSR/SDA/STD/eSub rows."
+      ],
+      "source_sha256": "c29394ce4901fb7000215cc2859724cbf3ff37d34ebb0b819cdd81555aa400c1"
+    },
+    {
+      "id": "q048",
+      "question": "Please summarize tasks completed by my DU members (under manager {{manager:Person name}}) from {{start_month:Month}} {{start_year:Year}} to present, and compare with department average (under dept leader {{dept_leader:Person name}})",
+      "retrieval_text": "Please summarize tasks completed by my DU members (under manager {{manager:Person name}}) from {{start_month:Month}} {{start_year:Year}} to present, and compare with department average (under dept leader {{dept_leader:Person name}}). Benchmark individual DU output against departmental mean task volume. 比较DU成员自指定年月完成任务与部门人均任务量。 Person REPORTS_TO Delivery.",
+      "issues": [
+        "Department scope includes only the leader's immediate reports, not recursively nested department staff.",
+        "Adds delivery totals to SDSL personal counts without a documented attribution rule; per-delivery breakdown is absent."
+      ],
+      "source_sha256": "27a55aee8cbfcedab0db8435b5099803278a210e44e1ee606a723cce1c90ee28"
+    },
+    {
+      "id": "q049",
+      "question": "How many tasks will my DU members (including myself) plan to complete in the next {{months:Number of months}} months?",
+      "retrieval_text": "How many tasks will my DU members (including myself) plan to complete in the next {{months:Number of months}} months? Sum future active assignments for manager plus direct reports. 汇总经理本人及直属DU成员未来数月计划任务。 Person REPORTS_TO WORKS_ON Ongoing Planned Delivery.",
+      "issues": [
+        "Horizon starts next calendar month, excluding remaining current-month work although question says next months.",
+        "Returns member task totals instead of per-delivery CSR/SDA/STD/eSub breakdown."
+      ],
+      "source_sha256": "35e73c9713415cb1f2ae9b4ff3aafc0b9bcbdb01a04856a3d5730a05697bf5a5"
+    },
+    {
+      "id": "q051",
+      "question": "Please summarize all {{status:Delivery status}} deliveries for my DU (under manager {{manager:Person name}})",
+      "retrieval_text": "Please summarize all {{status:Delivery status}} deliveries for my DU (under manager {{manager:Person name}}). List team deliveries matching selected statuses and responsible staff. 按指定状态列出经理DU的交付及责任人。 Person REPORTS_TO Study Delivery DID_Status.",
+      "issues": [
+        "Malformed toUpper/replace normalization is not executable.",
+        "Considers manager only rather than traversing DU members.",
+        "Duplicates q059 and omits required delivery status/detail fields."
+      ],
+      "source_sha256": "76409cb69b39f4ae1de4059a9f04fa933baa8abda85162b71cf31064a5435517"
+    },
+    {
+      "id": "q053",
+      "question": "Please generate a work summary for my DU members (under manager {{manager:Person name}}) over the past {{summary_period:Months}} months and future {{plan_period:Months}} months",
+      "retrieval_text": "Please generate a work summary for my DU members (under manager {{manager:Person name}}) over the past {{summary_period:Months}} months and future {{plan_period:Months}} months. Combine DU recent accomplishments and upcoming commitments per member. 按成员生成DU过去数月总结与未来数月计划。 REPORTS_TO Delivery WORKS_ON.",
+      "issues": [
+        "Independent past and future OPTIONAL MATCHes multiply rows and inflate Past_Work when multiple future deliveries exist.",
+        "Returns aggregate task totals rather than required per-delivery breakdown."
+      ],
+      "source_sha256": "2b3fb93d9b6d9364b38fea7bcf94829143ad367ad59c3cfaba0809ddda4f76ab"
+    },
+    {
+      "id": "q054",
+      "question": "Please summarize all tasks completed by my DU members (under manager {{manager:Person name}}), broken down by season, for the past {{year_count:Years}} years",
+      "retrieval_text": "Please summarize all tasks completed by my DU members (under manager {{manager:Person name}}), broken down by season, for the past {{year_count:Years}} years. Group direct-report and manager completed output by calendar quarter and year. 按季度和年份汇总DU成员历年完成任务。 REPORTS_TO Delivery WORKS_ON Completed.",
+      "issues": [
+        "Past years means calendar years including current year, not a rolling year interval.",
+        "Adds delivery totals for SDSL to personal counts without an attribution rule; returns quarter totals instead of per-delivery task rows."
+      ],
+      "source_sha256": "f88c34617edc88370ac3e3fbd00c4ebdf2cd36e61190670f38695ac6578ef6ba"
+    },
+    {
+      "id": "q055",
+      "question": "Which {{status:Delivery status}} deliveries of my DU (under manager {{manager:Person name}}) are concentrated in the same time period",
+      "retrieval_text": "Which {{status:Delivery status}} deliveries of my DU (under manager {{manager:Person name}}) are concentrated in the same time period. Detect monthly clustering of DU deadlines with responsible members and task amounts. 查看DU指定状态交付是否集中在同一月份。 Delivery Year Month Planned_Delivery_Date REPORTS_TO.",
+      "issues": [
+        "Groups all months without a future horizon or explicit congestion threshold; required per-delivery task split absent."
+      ],
+      "source_sha256": "7bdabf815dd0a4f21a4c09a59b3d77d26df83d9adb7ec330aec490392132b00a"
+    },
+    {
+      "id": "q056",
+      "question": "Please summarize the number of tasks and time spent by my DU members (under manager {{manager:Person name}}) in each DID in last {{period:Months}} months",
+      "retrieval_text": "Please summarize the number of tasks and time spent by my DU members (under manager {{manager:Person name}}) in each DID in last {{period:Months}} months. Pair DU member task counts with monthly logged delivery effort. 汇总DU成员过去数月每个DID的任务量与工时。 Person TIME_ON DIDN_Month WORKS_ON.",
+      "issues": [
+        "Filters only one month equal to the computed start month, not the entire last-N-month interval.",
+        "WORKS_ON lifetime task counts are reported as period counts; missing required CSR/SDA/STD/eSub and detail fields."
+      ],
+      "source_sha256": "88126f911b9154bb07ba6d2e664a8803c4d7d3af98bd257488c0cf85b72dc545"
+    },
+    {
+      "id": "q057",
+      "question": "Summarize, by member and by month, which tasks each DU member is expected to complete in the next {{months:Number of months}} months.",
+      "retrieval_text": "Summarize, by member and by month, which tasks each DU member is expected to complete in the next {{months:Number of months}} months. Show manager/direct-report future CSR SDA STD eSub volume month by month. 按成员和月份汇总DU未来任务计划。 Person REPORTS_TO WORKS_ON Delivery Year Month.",
+      "issues": [
+        "Starts from next calendar month, excluding current-month remaining work.",
+        "Returns member-month totals rather than skill.md's required one row per Delivery with details."
+      ],
+      "source_sha256": "74bf78b4f3e51cfd8753483e9a57ee90caed57d4bcc2a6fba2f201ff6c018385"
+    },
+    {
+      "id": "q058",
+      "question": "Please summarize all {{status:Delivery status}} deliveries my DU (under manager {{manager:Person name}}) completed, with task breakdown by person",
+      "retrieval_text": "Please summarize all {{status:Delivery status}} deliveries my DU (under manager {{manager:Person name}}) completed, with task breakdown by person. Review DU member finished deliveries and contribution counts. 按DU成员汇总指定状态交付及个人任务。 REPORTS_TO WORKS_ON Delivery Completed.",
+      "issues": [
+        "Returns member-level totals and delivery-name lists rather than individual delivery CSR/SDA/STD/eSub rows.",
+        "Heading says completed but accepts any status; status must be resolved consistently."
+      ],
+      "source_sha256": "7dec9baa7a4425a4210715c764ef196b2fc9e65a8210cba6b6c7b95159b866be"
+    },
+    {
+      "id": "q059",
+      "question": "Please summarize all {{status:Delivery status}} deliveries for my DU (under manager {{manager:Person name}})",
+      "retrieval_text": "Please summarize all {{status:Delivery status}} deliveries for my DU (under manager {{manager:Person name}}). Retrieve DU delivery schedules for chosen states. 查询经理所属DU指定状态交付清单。 Person REPORTS_TO Study Delivery DID_Status.",
+      "issues": [
+        "Duplicate of q051, including malformed toUpper/replace expression.",
+        "Never traverses DU membership; omits required status/details."
+      ],
+      "source_sha256": "ab0843ee93bfc99569e3e01eece24c8278a3cfb759895b9ba0de5ca38e835a4a"
+    },
+    {
+      "id": "q060",
+      "question": "List DU members (including myself) who do not have any deliveries for next month.",
+      "retrieval_text": "List DU members (including myself) who do not have any deliveries for next month. Identify manager and direct reports with no assigned delivery in the following calendar month. 找出下个自然月没有交付安排的DU成员和经理本人。 REPORTS_TO WORKS_ON Delivery Year Month.",
+      "issues": [
+        "collect(manager) repeats manager per direct report and can multiply manager matches downstream.",
+        "No Ongoing/Planned filter, so Cancelled work may prevent an otherwise appropriate no-work alert."
+      ],
+      "source_sha256": "1f08857b6118566587d4a97e1a4b0154406751b9f26a12286107ce882be0fe54"
+    },
+    {
+      "id": "q061",
+      "question": "Please summarize tasks and deliveries of each DU for TA Lead {{ta_lead:Person name}}",
+      "retrieval_text": "Please summarize tasks and deliveries of each DU for TA Lead {{ta_lead:Person name}}. Roll up completed output across DU managers beneath a TA lead. 按TA负责人下属各DU汇总已完成交付及任务。 Person TA_Lead Manager REPORTS_TO WORKS_ON.",
+      "issues": [
+        "Treats any nonempty Manager property as manager flag instead of confirming its value; a nonempty N would qualify.",
+        "Adds whole delivery counts to SDSL personal work without documented attribution; aggregate-only task output."
+      ],
+      "source_sha256": "d3ee7bd84a3f81a68abc8b7acd3e7df979b73ad4c20997f48c3baca5516eea29"
+    },
+    {
+      "id": "q062",
+      "question": "Summarize the workload of each DU member (including myself) for the coming month.",
+      "retrieval_text": "Summarize the workload of each DU member (including myself) for the coming month. List next-calendar-month task volume and DID assignments for manager and direct reports. 汇总下个自然月DU每名成员含经理的工作量与DID。 REPORTS_TO WORKS_ON Delivery Year Month.",
+      "issues": [
+        "collect(manager) repeats manager for each direct report and inflates manager task sums.",
+        "No active-status filter; returns member totals rather than required per-delivery task rows."
+      ],
+      "source_sha256": "790005aadb233e3c91987f356dbde48801f4e25ff819e250525d9f78c86d8cb0"
+    },
+    {
+      "id": "q063",
+      "question": "Please summarize {{status:Delivery status}} deliveries and tasks for my DU (under manager {{manager:Person name}}) in next {{period:Months}} months, and compare with other DUs in my department (under dept leader {{dept_leader:Person name}})",
+      "retrieval_text": "Please summarize {{status:Delivery status}} deliveries and tasks for my DU (under manager {{manager:Person name}}) in next {{period:Months}} months, and compare with other DUs in my department (under dept leader {{dept_leader:Person name}}). Benchmark upcoming DU deliveries and task volume against peer teams. 对比未来数月本DU和部门其他DU的交付任务负荷。 REPORTS_TO Study Delivery.",
+      "issues": [
+        "Groups collect(duMember) by duMember and repeats manager rows; delivery task sums can count the same delivery multiple times.",
+        "Inclusive month bounds span current month plus N additional months, not exactly N months."
+      ],
+      "source_sha256": "38ea1cf699de3793e13612c3cbcabdc7e112c60573037b74c5669f1f16c07f42"
+    },
+    {
+      "id": "q064",
+      "question": "Please summarize tasks and deliveries of each TA from {{start_month:Month}} {{start_year:Year}} to present",
+      "retrieval_text": "Please summarize tasks and deliveries of each TA from {{start_month:Month}} {{start_year:Year}} to present. Aggregate completed department output by TA leadership since a starting month. 从指定年月起按TA负责人汇总任务与交付。 Person TA_Lead REPORTS_TO Delivery WORKS_ON.",
+      "issues": [
+        "TA_Lead nonempty check can include N rather than only Y; recursive paths may duplicate a person.",
+        "Adds delivery totals for SDSL to individual counts without documented attribution and omits per-delivery task rows."
+      ],
+      "source_sha256": "47a1384da345be1b4ce6faabeec40e36349128f32f3265694e2d7d4c83ab5309"
+    },
+    {
+      "id": "q065",
+      "question": "Please summarize the number of tasks completed by each person in my DU (under manager {{manager:Person name}}), categorized by {{task_type:Task type}} Generation and QC",
+      "retrieval_text": "Please summarize the number of tasks completed by each person in my DU (under manager {{manager:Person name}}), categorized by {{task_type:Task type}} Generation and QC. Show each DU person's SDTM ADaM or TLF programming versus quality-control output by DID. 按DU成员与DID比较SDTM ADaM TLF编程和质控数量。 WORKS_ON REPORTS_TO.",
+      "issues": [
+        "Default task_type SDTM,ADaM,TLF is interpolated into one property identifier and alias, producing invalid Cypher.",
+        "Property-name substitution must be allowlisted; required CSR/SDA/STD/eSub and delivery-detail return fields missing."
+      ],
+      "source_sha256": "9d4fa4b980ff3d9081e84f497c74d66e7349924b861381daeb1cdf883b8c8589"
+    },
+    {
+      "id": "q066",
+      "question": "Please summarize the number of DIDs, tasks including {{task_type:Task type}} for specific study {{study:Study name}}",
+      "retrieval_text": "Please summarize the number of DIDs, tasks including {{task_type:Task type}} for specific study {{study:Study name}}. Count finished study deliveries and associated SDTM ADaM TLF task volume. 汇总指定研究完成DID数及SDTM ADaM TLF任务量。 Study HAS_DELIVERY Delivery WORKS_ON.",
+      "issues": [
+        "task_type parameter is ignored and participant WORKS_ON totals are used instead of authoritative Delivery totals for study output.",
+        "Returns study aggregates rather than required per-delivery CSR/SDA/STD/eSub details."
+      ],
+      "source_sha256": "59dda95a55d81ce1d0ff2b56e6275f028da932d2edacec0d19ccc2f6b097635d"
+    },
+    {
+      "id": "q067",
+      "question": "Please summarize tasks including {{task_type:Task type}} completed by each person for specific study {{study:Study name}} and DID {{delivery_id:Delivery ID}}",
+      "retrieval_text": "Please summarize tasks including {{task_type:Task type}} completed by each person for specific study {{study:Study name}} and DID {{delivery_id:Delivery ID}}. Show all programmers' completed SDTM ADaM TLF contributions to a study delivery. 查询指定研究DID各参与者完成的任务。 Person WORKS_ON Study Delivery.",
+      "issues": [
+        "Parameter delivery_id is referenced as did in query; task_type is ignored.",
+        "Uses Delivery.Name for a DID identifier and omits required CSR/SDA/STD/eSub split and delivery details."
+      ],
+      "source_sha256": "9529e010b0fff112261ff4c89961bcdee623b7f85988af5609cd5eab9e2b125f"
+    },
+    {
+      "id": "q068",
+      "question": "Please let me know how many {{status:Delivery status}} deliveries my DU (under manager {{manager:Person name}}) will have in next {{period:Months}} months",
+      "retrieval_text": "Please let me know how many {{status:Delivery status}} deliveries my DU (under manager {{manager:Person name}}) will have in next {{period:Months}} months. Count upcoming team deliveries within a month horizon. 统计指定经理DU未来数月指定状态的交付数量。 Person REPORTS_TO Study Delivery Year Month.",
+      "issues": [
+        "Treats supplied manager as an employee and traverses upward to a different DU manager.",
+        "No lower date/month bound, so historic deliveries qualify."
+      ],
+      "source_sha256": "261f32aa7ff38dd95e53e7bf35b7a664be27c05cdf167a3a19175472abd43f8b"
+    },
+    {
+      "id": "q070",
+      "question": "Please summarize the time spent on specific study {{study:Study name}} and DID {{delivery_id:Delivery ID}} by all participants",
+      "retrieval_text": "Please summarize the time spent on specific study {{study:Study name}} and DID {{delivery_id:Delivery ID}} by all participants. Show participant effort and month-by-month hours for one study delivery. 按参与者汇总指定研究DID工时及每月分布。 Person TIME_ON DIDN_Month Delivery Study.",
+      "issues": [
+        "Requires WORKS_ON as well as TIME_ON, excluding people with logged hours but no assignment relationship.",
+        "Monthly_Time_Distribution collects records rather than summing each participant-month; identifier is matched on Delivery.Name."
+      ],
+      "source_sha256": "e9123e4739e89e308f816324fec5657e14a98635caf7e99da4a597ed7b23dcf0"
+    },
+    {
+      "id": "q071",
+      "question": "Please help me summarize the number of tasks of all participants in specific DID {{delivery_id:Delivery ID}} during {{start_month:Month}} {{start_year:Year}} to {{end_month:Month}} {{end_year:Year}}",
+      "retrieval_text": "Please help me summarize the number of tasks of all participants in specific DID {{delivery_id:Delivery ID}} during {{start_month:Month}} {{start_year:Year}} to {{end_month:Month}} {{end_year:Year}}. Summarize every contributor's task output for a DID over a month range. 按参与者统计指定DID在起止年月间的任务。 WORKS_ON TIME_ON DIDN_Month.",
+      "issues": [
+        "Date/status predicates belong to OPTIONAL MATCH, so unmatched participants remain and lifetime WORKS_ON totals are not restricted to period.",
+        "Multiple qualifying months repeat participant task rows; period-specific task amounts are not represented in schema."
+      ],
+      "source_sha256": "7ec482409498932609ffd40d3443eddf227aeac2d364e8b738bd4efdc35b4252"
+    },
+    {
+      "id": "q072",
+      "question": "Please summarize the details of {{keyword:Delivery keyword}} deliveries for this month",
+      "retrieval_text": "Please summarize the details of {{keyword:Delivery keyword}} deliveries for this month. Search current-month delivery content and reporting text for a keyword. 按关键词检索本月交付内容和报告详情。 Delivery Delivery_Content Reporting_Event Reporting_Detail Year Month.",
+      "issues": [
+        "Pattern (delivery)<-[:HAS_DELIVERY]->(study) is bidirectional and conflicts with the directed Study-to-Delivery relationship.",
+        "Mandatory Study_Info is unused and excludes missing details; planned/actual dates and deliverable detail are not returned."
+      ],
+      "source_sha256": "f8ef6d0ef8d503a0c45e30837089e56f6265a2f27588fa960c44806455875022"
+    },
+    {
+      "id": "q073",
+      "question": "Please summarize the number of {{task_type:Task type}} for each DID and study",
+      "retrieval_text": "Please summarize the number of {{task_type:Task type}} for each DID and study. List study delivery SDTM ADaM TLF item counts. 按研究及DID汇总SDTM ADaM TLF数量。 Study Delivery CSR_SDTM_Num CSR_ADaM_Num CSR_TLF_Num.",
+      "issues": [
+        "task_type parameter is ignored.",
+        "Labels SDTM+ADaM+TLF item sum as total tasks, whereas schema/skill define task totals from CSR/SDA/STD/eSub task fields; required details absent."
+      ],
+      "source_sha256": "a1dfff9c141d5397911d1926ddb8922e56ae95d0c436f3799dda3bedfdda9877"
+    },
+    {
+      "id": "q075",
+      "question": "Summarize the LoT (listings, outputs, tables) for a specific project and report the number of unique tables for each domain after removing duplicates.",
+      "retrieval_text": "Summarize the LoT (listings, outputs, tables) for a specific project and report the number of unique tables for each domain after removing duplicates. Deduplicate TLF titles by source domain within delivery LoT. 统计项目LoT各来源域去重后的表格数量。 Delivery HAS_TLF TLF Name Source.",
+      "issues": [
+        "Question requests a project but query restricts to one delivery_name identifier.",
+        "Counts all TLF types rather than only tables."
+      ],
+      "source_sha256": "ded54db934c8e02bd06056fb64c46578e1cff96dc755d1dda02b13413b179d88"
+    },
+    {
+      "id": "q076",
+      "question": "Please list the difference of {{task_type:Task type}} between two specific DID {{delivery_id1:Delivery ID 1}} and {{delivery_id2:Delivery ID 2}}",
+      "retrieval_text": "Please list the difference of {{task_type:Task type}} between two specific DID {{delivery_id1:Delivery ID 1}} and {{delivery_id2:Delivery ID 2}}. Compute unique SDTM ADaM TLF names on either side of a delivery comparison. 比较两个DID的SDTM ADaM TLF增删差异。 Delivery HAS_SDTM HAS_ADAM HAS_TLF.",
+      "issues": [
+        "task_type is ignored; always compares all three types.",
+        "Sequential OPTIONAL MATCHes create SDTM-by-ADaM-by-TLF products before DISTINCT aggregation, potentially expensive."
+      ],
+      "source_sha256": "d9bb7c9b0140faa92871bf82e6e7d9576dbaec966dcc48eec7f52185bf3d6d7e"
+    },
+    {
+      "id": "q077",
+      "question": "What is the {{date_type:Date type}} for each DID and Study",
+      "retrieval_text": "What is the {{date_type:Date type}} for each DID and Study. Retrieve a chosen planned or actual delivery date for every study DID. 查看各研究DID指定类型的交付日期。 Study Delivery Planned_Delivery_Date Actual_Delivery_Date.",
+      "issues": [
+        "date_type is inserted directly into property and alias syntax and must be restricted to schema-defined date fields.",
+        "Required delivery detail fields omitted."
+      ],
+      "source_sha256": "85886fa59add262ac2eff675d108f4c72c2e89508cb8bb99f6f79a6c7c8e3914"
+    },
+    {
+      "id": "q078",
+      "question": "Please summarize the number of tasks for specific DID {{delivery_id:Delivery ID}} and calculate the percentage of work for each participant",
+      "retrieval_text": "Please summarize the number of tasks for specific DID {{delivery_id:Delivery ID}} and calculate the percentage of work for each participant. Compute participant shares of assigned delivery task volume. 统计指定DID每位参与者任务数量和贡献占比。 Person WORKS_ON Delivery CSR SDA STD eSub.",
+      "issues": [
+        "Percentage denominator is sum of personal assignments, not Delivery task total; these need not agree.",
+        "Required per-delivery CSR/SDA/STD/eSub split and detail/date fields are absent."
+      ],
+      "source_sha256": "9c17d26caa9aa53c21ee40fcfc20688661400e06f11884d1c837f292c7650f35"
+    },
+    {
+      "id": "q079",
+      "question": "Please let me know which {{status:Delivery status}} deliveries my DU (under manager {{manager:Person name}}) is involved in that are approaching their due date in next {{period:Days}} days",
+      "retrieval_text": "Please let me know which {{status:Delivery status}} deliveries my DU (under manager {{manager:Person name}}) is involved in that are approaching their due date in next {{period:Days}} days. Find imminent DU deadlines with countdown days. 查询经理DU未来若干天即将到期的指定状态交付。 REPORTS_TO Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Required delivery detail fields omitted."
+      ],
+      "source_sha256": "bc3e76421c8f40225836ff9f0051c33ae494f547ae957dababfa4e23b637f077"
+    },
+    {
+      "id": "q080",
+      "question": "Please tell me which deliveries will overlap in timeline in the next two months.",
+      "retrieval_text": "Please tell me which deliveries will overlap in timeline in the next two months. Identify pairs of personal DID deadlines whose assumed work windows overlap. 查找个人未来两个月交付时间重叠的DID组合。 Person WORKS_ON Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Assumes each delivery occupies a 30-day window without any schema-backed start date; this is a heuristic, not actual overlap.",
+        "Parameter person_name differs from person placeholder; required delivery status/detail fields omitted."
+      ],
+      "source_sha256": "083d45d2997be2e6c82a873bf1e1a0e8054e366a9f7514aac474b175568ccb54"
+    },
+    {
+      "id": "q082",
+      "question": "Please remind me which of these DIDs should be delivered first.",
+      "retrieval_text": "Please remind me which of these DIDs should be delivered first. Sort a person's unfinished delivery commitments by earliest due date. 提醒个人哪些未完成DID应先交付。 Delivery Planned_Delivery_Date DID_Status WORKS_ON.",
+      "issues": [
+        "Person property map lacks closing brace and string quotes.",
+        "No supplied DID subset is accepted; non-Completed includes Cancelled and required details are omitted."
+      ],
+      "source_sha256": "c5af8f141dd532f02f4cc0584d2f588d86df136c8ba14314bbe386ef77ada552"
+    },
+    {
+      "id": "q083",
+      "question": "Which DIDs have my name on them, but I have not yet filled in the daily survey for?",
+      "retrieval_text": "Which DIDs have my name on them, but I have not yet filled in the daily survey for? Compare assigned deliveries with absence of personal time records. 查找已分配个人任务但尚未填日报工时的DID。 WORKS_ON TIME_ON DIDN_Month Delivery.",
+      "issues": [
+        "Person map lacks closing brace and string quotes.",
+        "Absence of any historical TIME_ON is used as survey proxy, not missing today's survey; no survey-specific entity exists in schema."
+      ],
+      "source_sha256": "af94cc8c34a504f0ebc958a568e055f91d2a47eee4f638e16cb8ed56e725b49e"
+    },
+    {
+      "id": "q084",
+      "question": "Based on historical delivery data, which resource bottlenecks might occur in the next three months?",
+      "retrieval_text": "Based on historical delivery data, which resource bottlenecks might occur in the next three months? Flag people whose future task assignments double recent workload. 根据历史与未来三个月任务量比较识别人员资源瓶颈。 Person WORKS_ON Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Parameters block contains invalid nested empty-object JSON.",
+        "Uses planned dates for past output and arbitrary two-times threshold without effort/capacity; excludes people with zero historical volume.",
+        "Increase_Percentage is future/past percent, not percentage increase."
+      ],
+      "source_sha256": "0593ae33064a097f9d74ea299357f51ee06f341552a7d98f903f096b89dd77e7"
+    },
+    {
+      "id": "q088",
+      "question": "Please remind me if there will be any periods in my DU with particularly few deliveries.",
+      "retrieval_text": "Please remind me if there will be any periods in my DU with particularly few deliveries. Detect low-volume future months for a manager's team. 提醒经理DU未来交付稀少的月份。 REPORTS_TO WORKS_ON Delivery Year Month.",
+      "issues": [
+        "Unquoted manager placeholder; excludes manager's own work.",
+        "COUNT(d) duplicates deliveries shared by members and never generates zero-delivery months, missing the quietest periods."
+      ],
+      "source_sha256": "660318737fe97be96f593ec2a3acfa38f4f38049b615903bd85491d9cb174e3b"
+    },
+    {
+      "id": "q089",
+      "question": "If I am involved in multiple DIDs, please tell me which of these should be delivered first.",
+      "retrieval_text": "If I am involved in multiple DIDs, please tell me which of these should be delivered first. Determine the earliest due personal DID among several commitments. 多个DID同时参与时确定个人应最先交付哪项。 Person WORKS_ON Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Person map lacks closing brace and string quotes.",
+        "ORDER BY planned date DESC reverses earliest-first priority; non-Completed includes Cancelled."
+      ],
+      "source_sha256": "e2fb8f6f3ba758e16a41c0f07a06716c1b36482f6edfba79707799cfddc55a2c"
+    },
+    {
+      "id": "q090",
+      "question": "Send a bi-weekly upcoming delivery report to the TA lead.",
+      "retrieval_text": "Send a bi-weekly upcoming delivery report to the TA lead. Prepare a fourteen-day delivery outlook for recursive TA-lead reports. 为TA负责人准备下属未来两周交付报告。 Person REPORTS_TO Delivery Planned_Delivery_Date.",
+      "issues": [
+        "Read-only query can prepare report data but cannot send or schedule reports.",
+        "Parameter ta_lead_name differs from ta_lead placeholder; length(path) includes WORKS_ON edge, overstating reporting level by one."
+      ],
+      "source_sha256": "be16eace935e43fe3d6fece96d235b91cd3b9fbe9efc806016564e4e8ff25d2e"
+    },
+    {
+      "id": "q091",
+      "question": "Please regularly update me on the delivery status of my DU across the entire department.",
+      "retrieval_text": "Please regularly update me on the delivery status of my DU across the entire department. Summarize departmental team delivery activity and member DID lists. 定期查看部门各DU成员交付进展与状态。 Person REPORTS_TO WORKS_ON Delivery.",
+      "issues": [
+        "Parameters block contains invalid nested empty-object JSON.",
+        "Does not schedule updates or return delivery statuses; sums per-member DID-list lengths so shared deliveries inflate totals.",
+        "No target DU/department filter and no upper date bound."
+      ],
+      "source_sha256": "ff7fe8b1cdb471da9cf0b72481895180267efba1680f00e9a6d173ad650c7e4a"
+    },
+    {
+      "id": "q092",
+      "question": "Which DIDs have I been assigned tasks for, but I have never filled out the daily survey for?",
+      "retrieval_text": "Which DIDs have I been assigned tasks for, but I have never filled out the daily survey for? Find assigned delivery IDs with no personal recorded effort. 查询个人已分配任务但从未填工时日报的DID。 WORKS_ON TIME_ON DIDN_Month Delivery.",
+      "issues": [
+        "Person map lacks closing brace and string quotes.",
+        "Duplicate intent of q083; interprets no TIME_ON ever as no survey rather than an explicit survey record."
+      ],
+      "source_sha256": "0829881a55479527ad07586a342fb6d8949b579c2729e51e027604f373995649"
+    },
+    {
+      "id": "q093",
+      "question": "Please tell me where the DID runs, and provide the specific CDARS or SIGMA path.",
+      "retrieval_text": "Please tell me where the DID runs, and provide the specific CDARS or SIGMA path. Locate a delivery's reporting execution system and file location. 查询DID运行的CDARS或SIGMA系统及报告路径。 Delivery Reporting_Path Reporting_System.",
+      "issues": [
+        "DID string placeholder is unquoted and would not be valid plain string substitution."
+      ],
+      "source_sha256": "e35081acf6e3759e545f9b891792991d06fcaa0caea31670002201023e63ce48"
+    },
+    {
+      "id": "q094",
+      "question": "Please help me retrieve tables similar to a specific table title.",
+      "retrieval_text": "Please help me retrieve tables similar to a specific table title. Search TLF titles using selected keywords and show owning study deliveries. 根据表格标题关键词查找相似表格及研究DID。 TLF Name Delivery Study HAS_TLF.",
+      "issues": [
+        "Reads undocumented TLF.Type rather than TLF_Type.",
+        "Keyword strings are unquoted; CONTAINS keyword matching is lexical only, not semantic similarity."
+      ],
+      "source_sha256": "bae53c3ec47db4aee39da9168b273c6a4a773ccfbd68ef3dfcfed0f1b1586ba5"
+    },
+    {
+      "id": "q095",
+      "question": "Which DID contains the most recently updated table?",
+      "retrieval_text": "Which DID contains the most recently updated table? Locate recent deliveries containing a named TLF, ordered by actual delivery date. 按实际交付日期查找包含指定表格的最新DID。 TLF Name Delivery Actual_Delivery_Date.",
+      "issues": [
+        "No table-update timestamp exists in schema; delivery date is only a recency proxy.",
+        "Table-name placeholder is unquoted and LIMIT defaults to ten, not a single latest DID."
+      ],
+      "source_sha256": "9f14a80bef97c3de42795e79749b83cd79f279d7c72c8691817cb705813f1443"
+    },
+    {
+      "id": "q096",
+      "question": "Quickly display the DIDs for a specific project.",
+      "retrieval_text": "Quickly display the DIDs for a specific project. List a study's delivery identifiers and planned/actual dates, latest planned first. 快速查看指定研究的DID和计划实际日期。 Study HAS_DELIVERY Delivery.",
+      "issues": [
+        "Study property map lacks closing brace and string quotes.",
+        "Near-duplicate q104 with opposite sort order; required delivery detail fields missing."
+      ],
+      "source_sha256": "21ab419c135435037e49e421b308fd9e6c660c85b226c57dae067503bd1bf1e8"
+    },
+    {
+      "id": "q097",
+      "question": "Which DIDs has a particular table appeared in?",
+      "retrieval_text": "Which DIDs has a particular table appeared in? Trace a named table across delivery history. 查询特定表格出现过的全部DID及研究。 TLF Name Delivery DID_Status Planned_Delivery_Date HAS_TLF.",
+      "issues": [
+        "Unquoted table-name placeholder; CONTAINS may match multiple distinct titles.",
+        "Required delivery detail fields omitted."
+      ],
+      "source_sha256": "e80e26f05b9a541bcf6940a042ca262764d5761cfb8b5fe0ae8b580df0f4c0fa"
+    },
+    {
+      "id": "q099",
+      "question": "Which domain/TLF can this study refer to?",
+      "retrieval_text": "Which domain/TLF can this study refer to? Find recent studies in a therapeutic area as sources for reusable domains or output examples. 寻找同治疗领域可借鉴的研究域和TLF。 Study_Info TA Study Delivery TLF SDTM ADaM.",
+      "issues": [
+        "Returns studies and DID dates, not any actual domain or TLF names.",
+        "TA placeholder is unquoted; target study is not supplied, so its TA cannot be resolved automatically."
+      ],
+      "source_sha256": "c892a7bf25636776af12d1e51d16351cee6f9b363212d5ac2fa307e5573e283d"
+    },
+    {
+      "id": "q100",
+      "question": "When facing an unfamiliar domain, I want to quickly search which DID has a similar TLF.",
+      "retrieval_text": "When facing an unfamiliar domain, I want to quickly search which DID has a similar TLF. Locate reusable output titles in other study deliveries using keywords. 遇到陌生域时按关键词寻找含相似TLF的DID作为参考。 TLF Name Study Delivery HAS_TLF.",
+      "issues": [
+        "Duplicate query of q094; uses undocumented TLF.Type.",
+        "Unquoted keyword strings; lexical keyword matching does not establish semantic/domain similarity."
+      ],
+      "source_sha256": "2b5310d8e703a730207aef4430890d43568b777ca30d6783e619cfb56a6d2268"
+    },
+    {
+      "id": "q101",
+      "question": "Answer the differences between TLFs or datasets in two DIDs.",
+      "retrieval_text": "Answer the differences between TLFs or datasets in two DIDs. Compare two deliveries for added or removed TLF, ADaM and SDTM names with counts. 比较两个DID的TLF及数据集差异和数量。 Delivery HAS_TLF HAS_ADAM HAS_SDTM.",
+      "issues": [
+        "Comparison is name-set only and cannot detect changes in content or specification for same-name items.",
+        "Paired OPTIONAL MATCHes form cross-products before aggregation, potentially expensive."
+      ],
+      "source_sha256": "49dd13d0ac38d5519bb33f0b45f2ae976f216ea38b818b0a1a2281aea8605b83"
+    },
+    {
+      "id": "q102",
+      "question": "Please tell me which DID I should fill in for today's work.",
+      "retrieval_text": "Please tell me which DID I should fill in for today's work. Suggest active assigned identifiers for daily time reporting. 查询今天工作日报应填写的个人DID。 Person WORKS_ON Delivery Planned_Delivery_Date TIME_ON.",
+      "issues": [
+        "Person map lacks closing brace and string quotes.",
+        "Upcoming non-Completed assignments cannot establish what work happened today; excludes overdue work and includes Cancelled."
+      ],
+      "source_sha256": "26946b5afe66c73f9944149673abe69ac98073310d3eb3f7cedf9b4c26137c11"
+    },
+    {
+      "id": "q103",
+      "question": "Which deliveries have a similar or duplicate table title?",
+      "retrieval_text": "Which deliveries have a similar or duplicate table title? Find repeated TLF titles across distinct delivery identifiers. 查找不同交付之间相同或相似的表格标题。 Delivery HAS_TLF TLF Name.",
+      "issues": [
+        "Parameters block contains invalid nested empty-object JSON.",
+        "Finds exact equality only, not similar titles; concatenated DISTINCT collections can repeat DIDs and self-join scales poorly."
+      ],
+      "source_sha256": "15443f412fdcb9ace852cb3959eb6463394d3998d4cb5b2c02624e0d41e664c2"
+    },
+    {
+      "id": "q104",
+      "question": "Quickly display the DIDs for a specific project.",
+      "retrieval_text": "Quickly display the DIDs for a specific project. List study delivery identifiers and schedule dates, earliest planned first. 快速列出指定研究DID及交付时间。 Study HAS_DELIVERY Delivery Planned_Delivery_Date Actual_Delivery_Date.",
+      "issues": [
+        "Study property map lacks closing brace and string quotes.",
+        "Near-duplicate q096 with opposite ordering; required delivery detail fields omitted."
+      ],
+      "source_sha256": "d58d5c5721caf47b1c15c9b1ebc54ef209e20a08f566779b8cf3e2d4d687c2a7"
+    },
+    {
+      "id": "q106",
+      "question": "list programmers involved in the study C2321001 and their respective domains of responsibility.",
+      "retrieval_text": "list programmers involved in the study C2321001 and their respective domains of responsibility. Identify study programmers and individually assigned SDTM ADaM TLF domains. 列出研究C2321001参与程序员及各自负责域。 Study Person WORKS_ON HAS_SDTM HAS_ADAM HAS_TLF.",
+      "issues": [
+        "studyName parameter differs from study placeholder.",
+        "Assigns every delivery domain to every participating person without checking Generation/QC; OPTIONAL MATCH products can grow large."
+      ],
+      "source_sha256": "bb83165142886f4da9e99054ef7c7369de51de84f0c27253f8bf8f510f954d01"
+    },
+    {
+      "id": "q107",
+      "question": "find which DIDs are available for filling in the daily survey",
+      "retrieval_text": "find which DIDs are available for filling in the daily survey. Identify personal delivery IDs eligible for daily time-entry using statuses and a date cutoff. 查找个人可填写日报的DID及状态日期条件。 Person WORKS_ON Delivery DID_Status Actual_Delivery_Date.",
+      "issues": [
+        "Parameter JSON misses a comma after didStatuses; query uses legacy {parameter} syntax rather than modern $parameters.",
+        "Actual_Delivery_Date cutoff excludes Planned/Ongoing deliveries with null actual dates; duplicates q139."
+      ],
+      "source_sha256": "432902759523b0366ba8717707a19ad9af9641afc6ff0df40d6d8ff28cc8fca2"
+    },
+    {
+      "id": "q108",
+      "question": "find all deliveries that occurred on a specified date.",
+      "retrieval_text": "find all deliveries that occurred on a specified date. Retrieve delivery IDs by exact actual delivery day. 查询指定某天实际发生的全部交付。 Delivery Actual_Delivery_Date.",
+      "issues": [
+        "Uses legacy {deliveryDate} parameter syntax unsupported by modern Neo4j.",
+        "Returns only names, omitting required delivery status/detail/date columns."
+      ],
+      "source_sha256": "cdc5d683cb731b40cabf6cc447687561705c0f3d35a8b0cc7d352e15eb239be8"
+    },
+    {
+      "id": "q109",
+      "question": "retrieve the generator and QCer for a specific domain/table in a given study.",
+      "retrieval_text": "retrieve the generator and QCer for a specific domain/table in a given study. Find TLF programming and quality-control owners by source domain. 查询指定研究某域或表格的编程人员与质控人员。 Study Delivery HAS_TLF Generation QC TLF Source.",
+      "issues": [
+        "Uses legacy {studyName}/{source} parameter syntax.",
+        "Only TLF.Source is filtered; SDTM/ADaM ownership and an individual table-title filter are not handled."
+      ],
+      "source_sha256": "5cfddd0eb9ae9485ae76a878a339b839f0bbd4d53dcc857a1357e4aab4823024"
+    },
+    {
+      "id": "q110",
+      "question": "Retrieve the TLF number for a specific delivery.",
+      "retrieval_text": "Retrieve the TLF number for a specific delivery. List output titles and their HAS_TLF table/listing/figure identifiers for one DID. 获取指定交付每个TLF的编号与名称。 Delivery HAS_TLF TLF_Number TLF Name.",
+      "issues": [
+        "Parameters specify deliveryName but query placeholder is delivery_id."
+      ],
+      "source_sha256": "5c9f973d34922b4c0a72a1f20ef82ba9d0f5a26a26f989b3e2c9d265f62a4c83"
+    },
+    {
+      "id": "q111",
+      "question": "Find delivery identifiers for TLFs containing a specific name.",
+      "retrieval_text": "Find delivery identifiers for TLFs containing a specific name. Search an output title substring and return associated delivery IDs. 根据TLF名称片段检索所属交付编号。 TLF Name HAS_TLF Delivery DID.",
+      "issues": [
+        "Uses legacy {tlfName} parameter syntax.",
+        "No DISTINCT, so one DID may repeat for several matching TLFs; required delivery details omitted."
+      ],
+      "source_sha256": "72673b9c8183b601c01d9916e77c77870cb3b847e2ae8cfb58d1d4caa72e587b"
+    },
+    {
+      "id": "q112",
+      "question": "list  people are or have been involved in the delivery of a specific study",
+      "retrieval_text": "list  people are or have been involved in the delivery of a specific study. List unique historical and current delivery participants for a study. 列出某研究当前或曾参与交付的全部人员。 Study HAS_DELIVERY Delivery WORKS_ON Person.",
+      "issues": [
+        "Parameter studyName differs from study placeholder.",
+        "Near-duplicate intent of q120."
+      ],
+      "source_sha256": "c752d04371ed2e40df51f4a54e1cc29192d7e865f9519d1b0ff3485a54518b9d"
+    },
+    {
+      "id": "q113",
+      "question": "find the SDSL for a given study.",
+      "retrieval_text": "find the SDSL for a given study. Look up the named study's designated SDSL responsible lead. 查询指定研究的SDSL负责人。 Study SDSL.",
+      "issues": [
+        "Uses legacy {studyName} parameter syntax unsupported by modern Neo4j."
+      ],
+      "source_sha256": "c3b4cd53d844e2ae44d56f7978db320f3fdf1696734c29c69cab438baa030026"
+    },
+    {
+      "id": "q114",
+      "question": "calculate the total hours spent by the SDSL for study C2321001.",
+      "retrieval_text": "calculate the total hours spent by the SDSL for study C2321001. Sum a study lead's DID0 and DIDN effort recorded against study months. 统计研究C2321001的SDSL在DID0和DIDN上的总工时。 Study Person WORKS_AS TIME_ON Study_Month DID_Type.",
+      "issues": [
+        "Initial HAS_DELIVERY match repeats each study-month time record once per delivery, inflating hours.",
+        "Uses legacy {studyName}/{didTypes} parameter syntax."
+      ],
+      "source_sha256": "34b9fa0ed0ade836f237c20f349115b3c8c52ad9c752275e039dd66f90c80560"
+    },
+    {
+      "id": "q117",
+      "question": "recommend new studies or domains for a person based on their past experience.",
+      "retrieval_text": "recommend new studies or domains for a person based on their past experience. Use a person's historical study and domain exposure to suggest future assignments. 根据个人既往研究与SDTM ADaM经验推荐新研究或域。 Person Study_Info WORKS_ON HAS_SDTM HAS_ADAM.",
+      "issues": [
+        "Query returns existing experience only, not recommendations or unseen candidate studies/domains.",
+        "Uses legacy {personName} syntax; duplicate query of q118/q125/q134."
+      ],
+      "source_sha256": "a136b11923a8f08bf61d2466115004126cc9be47aba92d3751bbc685a71a0412"
+    },
+    {
+      "id": "q118",
+      "question": "recommend new studies or domains for a person based on their past skills.",
+      "retrieval_text": "recommend new studies or domains for a person based on their past skills. Match demonstrated programming skills to possible future studies and domains. 根据个人既有技能建议新研究或数据域。 Person WORKS_ON Study_Info SDTM ADaM Generation QC.",
+      "issues": [
+        "Query only summarizes past participation; schema has no explicit skills field or recommendation scoring.",
+        "Uses legacy {personName} syntax; duplicate query of q117/q125/q134."
+      ],
+      "source_sha256": "2dee57cb011297a36c5c8a99a8ee05c4c8629ac82b2f25b3ca79ad143280de2e"
+    },
+    {
+      "id": "q120",
+      "question": "retrieve the list of people who participated in the delivery of C2321001.",
+      "retrieval_text": "retrieve the list of people who participated in the delivery of C2321001. Find unique contributors across a study's deliveries. 查看研究C2321001全部交付参与人员。 Person WORKS_ON Delivery Study HAS_DELIVERY.",
+      "issues": [
+        "Uses legacy {studyName} parameter syntax; near-duplicate intent of q112."
+      ],
+      "source_sha256": "c4218798478049a73155e2e9d911266d2b23017ce2cfe784bb1c63a2fb719287"
+    },
+    {
+      "id": "q121",
+      "question": "identify the main contributor to a specified submission",
+      "retrieval_text": "identify the main contributor to a specified submission. Look up the person leading a named regulatory submission. 查询指定申报的主要贡献者或申报负责人。 Person LEADS_SUBMISSION Submission Name.",
+      "issues": [
+        "LEADS_SUBMISSION identifies a lead, not a measured main contributor by work volume.",
+        "Uses legacy {submissionName} parameter syntax."
+      ],
+      "source_sha256": "4475834d8ce612077654c46def90ec4f1617f149a7f1cc0641181a0c5ed4db79"
+    },
+    {
+      "id": "q125",
+      "question": "Summarize someone's expertise in TA and Domain.",
+      "retrieval_text": "Summarize someone's expertise in TA and Domain. Describe personal therapeutic-area and SDTM ADaM domain experience. 总结个人治疗领域TA与数据域专长。 Person Study_Info TA HAS_SDTM HAS_ADAM Generation QC.",
+      "issues": [
+        "Query never returns info.TA, despite expertise in TA being explicitly requested.",
+        "Historical assignment is only an expertise proxy; uses legacy {personName} syntax and duplicates q117/q118/q134."
+      ],
+      "source_sha256": "ae8ffbb80b2d83e6baaacdad96fce3a4489e113e702c2781411831c681c938c0"
+    },
+    {
+      "id": "q126",
+      "question": "summarize which team members under team lead 'Wang, Fang' collaborated with others on deliveries from March 1, 2025, to September 1, 2025 and which domains are they involved?",
+      "retrieval_text": "summarize which team members under a specified team lead collaborated with others on deliveries from March 1, 2025, to September 1, 2025 and which domains are they involved? Find teammate collaboration partners and individual SDTM ADaM TLF responsibility during dates. 汇总指定组长下成员在期间内共同交付的协作者及域。 Person Team_Lead_Name WORKS_ON Generation QC.",
+      "issues": [
+        "Private literal team-lead name in source heading is deliberately generalized only in retrieval_text; exact question is preserved.",
+        "Parameter teamLeadName differs from team_lead placeholder.",
+        "Shared delivery participation establishes co-assignment, not necessarily direct collaboration."
+      ],
+      "source_sha256": "179a97d48b050cc5c53f6228c80601d6fa9ad2ee1222e5e97d7667e60d3dd6bc"
+    },
+    {
+      "id": "q128",
+      "question": "list team members under Wang Fang, summarizing task numbers by study generation numbers and QC numbers for period 2025-03-01 to 2025-09-01",
+      "retrieval_text": "list team members under a specified team lead, summarizing task numbers by study generation numbers and QC numbers for period 2025-03-01 to 2025-09-01. Compare staff generation and quality-control task volumes for each study in a date interval. 按研究汇总指定组长下成员在期间内编程和质控任务量。 Person Team_Lead_Name WORKS_ON Delivery.",
+      "issues": [
+        "Private literal team-lead name in source heading is deliberately generalized only in retrieval_text; exact question is preserved.",
+        "Parameter teamLeadName differs from team_lead placeholder.",
+        "Study aggregate GEN/QC totals omit required per-delivery CSR/SDA/STD/eSub rows."
+      ],
+      "source_sha256": "030f7dc99234debb120efdcd04f376b6a378e95c73d26937f762182b052ad129"
+    },
+    {
+      "id": "q129",
+      "question": "Suggest a colleague in my team for urgent task, contains TLF about Kaplan-Meier Plot",
+      "retrieval_text": "Suggest a colleague in my team for urgent task, contains TLF about Kaplan-Meier Plot. Find teammates experienced in survival plot programming or QC for an urgent assignment. 为紧急Kaplan-Meier生存曲线TLF任务寻找组内有经验同事。 Person Team_Lead_Name HAS_TLF Generation QC.",
+      "issues": [
+        "Ranks historical title frequency only, without availability or urgency capacity assessment.",
+        "Uses legacy {teamLeadName}/{tlfName} syntax; no LIMIT for recommendations."
+      ],
+      "source_sha256": "c16d00df2f7b1cd712ce8fc473360fe0b007186aa2a5d57ea1e27750a22e49c5"
+    },
+    {
+      "id": "q130",
+      "question": "Suggest a colleague I could ask for TLF about Kaplan-Meier Plot",
+      "retrieval_text": "Suggest a colleague I could ask for TLF about Kaplan-Meier Plot. Locate experienced colleagues to consult about survival-curve outputs. 寻找可咨询Kaplan-Meier生存曲线TLF的同事。 Person HAS_TLF TLF Generation QC.",
+      "issues": [
+        "Frequency of title matches is an experience proxy, not verified expertise; no LIMIT.",
+        "Uses legacy {tlfName} parameter syntax."
+      ],
+      "source_sha256": "e5ddc84eead71065012a1e3bad0d102a50aee1c9a72e334590972a9e8507b340"
+    },
+    {
+      "id": "q131",
+      "question": "Suggest a colleague I could ask for Modelling",
+      "retrieval_text": "Suggest a colleague I could ask for Modelling. Find people with modelling-related TLF programming or quality-control history. 寻找可咨询统计建模输出的同事。 Person WORKS_ON Delivery HAS_TLF TLF Name Generation QC.",
+      "issues": [
+        "Modelling expertise is inferred only from a literal TLF title substring; other skills are not represented.",
+        "Uses legacy {tlfName} syntax and no LIMIT."
+      ],
+      "source_sha256": "8a3465f8bc39d7df441ead8652f572e5bb8d26dc2a450d93b2177cec7ff4d3f7"
+    },
+    {
+      "id": "q133",
+      "question": "Suggest a colleague I could assign for pending TLF in dLOT about Kaplan-Meier Plot",
+      "retrieval_text": "Suggest a colleague I could assign for pending TLF in dLOT about Kaplan-Meier Plot. Identify experienced staff for an unassigned survival-plot deliverable. 为dLoT待分配Kaplan-Meier图形寻找合适人员。 Person HAS_TLF Generation QC Delivery.",
+      "issues": [
+        "Does not identify pending/unassigned TLFs or assess workload availability; repeats q130's historical lookup.",
+        "Uses legacy {tlfName} syntax and no LIMIT."
+      ],
+      "source_sha256": "37827d6eb6e2a86899e7fc37b126fb96a0d6aa18c78a9254ccc6184ab762b157"
+    },
+    {
+      "id": "q134",
+      "question": "list domains a person has involved",
+      "retrieval_text": "list domains a person has involved. Show SDTM and ADaM domains where an individual performed generation or QC. 列出个人实际参与编程或质控的数据域。 Person WORKS_ON HAS_SDTM HAS_ADAM Generation QC.",
+      "issues": [
+        "Uses legacy {personName} syntax; duplicate query of q117/q118/q125.",
+        "Returns per-study rows with extra program/type fields; no TLF domains."
+      ],
+      "source_sha256": "9d00bce9fbfa7f8a02f47c6b4c8d505cfd8f5a5a0d4c5646ad673ae206f1d663"
+    },
+    {
+      "id": "q139",
+      "question": "find which DIDs are available for filling in the daily survey",
+      "retrieval_text": "find which DIDs are available for filling in the daily survey. Retrieve eligible personal time-reporting delivery identifiers by status and cutoff. 检索个人符合状态和日期条件的日报可选DID。 Person WORKS_ON Delivery DID_Status Actual_Delivery_Date.",
+      "issues": [
+        "Duplicate q107, including missing comma in parameter JSON and legacy {parameter} syntax.",
+        "Actual-date cutoff removes active/planned deliveries with no actual date; no explicit survey eligibility field exists."
+      ],
+      "source_sha256": "981ad77d1525c202dca76effd99ca8996c6bc761a518f69803a40bd5a82b85fe"
+    },
+    {
+      "id": "q140_1",
+      "question": "Compare TLF generation and QC across deliveries for Study C2321001",
+      "retrieval_text": "Compare TLF generation and QC across deliveries for Study C2321001. Detect changes in TLF programming and QC owners between successive delivery versions. 比较研究C2321001各版本交付的TLF编程和质控人员变化。 HAS_TLF Generation QC Delivery Name.",
+      "issues": [
+        "Assumes numeric delivery-name suffix defines chronological sequence.",
+        "Null-to-nonnull owner changes are lost through <> null comparisons; duplicate per-delivery TLF relationships can create spurious adjacency."
+      ],
+      "source_sha256": "0c1143c87a649d420d78850af83fdcd4c12ca21892ed156686b12d28ab6e5b09"
+    },
+    {
+      "id": "q140_2",
+      "question": "Compare SDTM generation and QC across deliveries for Study C2321001",
+      "retrieval_text": "Compare SDTM generation and QC across deliveries for Study C2321001. Track SDTM domain generator and QC handoffs between delivery versions. 比较研究C2321001历次交付的SDTM编程和质控分工变化。 HAS_SDTM Generation QC Delivery Name.",
+      "issues": [
+        "Assumes numeric suffix ordering rather than delivery dates.",
+        "Null owner transitions are not detected by <> comparisons; missing domains between versions are not reported."
+      ],
+      "source_sha256": "fcc6e63ba6017541bca8301e2455ddca698fb3e1948c713c533a7f1c409e7923"
+    },
+    {
+      "id": "q140_3",
+      "question": "Compare ADaM generation and QC across deliveries for Study C2321001",
+      "retrieval_text": "Compare ADaM generation and QC across deliveries for Study C2321001. Compare analysis dataset ownership across consecutive study deliveries. 比较研究C2321001不同交付版本ADaM编程与QC人员变动。 HAS_ADAM ADaM Generation QC.",
+      "issues": [
+        "Numeric delivery-name suffix ordering is an undocumented chronology assumption.",
+        "Null owner transitions are not detected by <> comparisons; only shared named domains with changed owners are returned."
+      ],
+      "source_sha256": "23cba6c6b00936db9ad7147599306169202a28de9dfcea425ce4d940402b13e6"
+    },
+    {
+      "id": "dashboard_q001",
+      "question": "Top 10 studies with high TLF volume",
+      "retrieval_text": "Top 10 studies with high TLF volume. Rank study output volume and include SDSL, group/TA leads and study milestones. 查看TLF总量最高十项研究及负责人和研究信息。 Study Delivery CSR_TLF_Num Study_Info TA REPORTS_TO.",
+      "issues": [
+        "Grouping by d.SDSL can split a study's volume; multiple hierarchy matches can multiply summed volumes.",
+        "Group_Lead/TA_Lead nonempty checks can accept N rather than Y."
+      ],
+      "source_sha256": "87f6da6fa6bc6790716dce927a9858b624608abb45abcb9312c731ae3145d330"
+    },
+    {
+      "id": "dashboard_q002",
+      "question": "Top 10 studies with high TLF volume in last 3 months",
+      "retrieval_text": "Top 10 studies with high TLF volume in last 3 months. Rank completed study TLF output across the previous three full calendar months with leadership information. 查看最近三个完整自然月完成TLF量最高十项研究。 Study Delivery Completed Year Month CSR_TLF_Num.",
+      "issues": [
+        "Grouping by delivery SDSL can split study totals; multiple leadership ancestors can multiply volume.",
+        "Uses previous full months rather than rolling three months."
+      ],
+      "source_sha256": "02c513c42e7a185cbeaca509de7ea72518b95a0625ee1e6632dce3946cef9bbd"
+    },
+    {
+      "id": "dashboard_q003",
+      "question": "Top 10 studies with high TLF volume in a target quarter",
+      "retrieval_text": "Top 10 studies with high TLF volume in a target quarter. Rank study completed output volume for a chosen year and quarter. 查询指定年份季度TLF量最高十项研究及负责人。 Study Delivery CSR_TLF_Num Year Month Study_Info.",
+      "issues": [
+        "Quarter/year are hardcoded to 2025 Q1 instead of parameterized.",
+        "Grouping by SDSL and multiple hierarchy matches can split/inflate volume."
+      ],
+      "source_sha256": "21222e168bd7b780cc7ea411e93d8ba5641e28903baaf1fe4958ad0d4f35d80e"
+    },
+    {
+      "id": "dashboard_q004",
+      "question": "Completed delivery task and hands-on hour summary",
+      "retrieval_text": "Completed delivery task and hands-on hour summary. Pair completed delivery task output with total DIDN monthly effort. 汇总已完成交付任务量与实际投入工时。 Delivery DIDN_Month Hour CSR SDA STD eSub.",
+      "issues": [
+        "Mandatory DIDN_Month excludes completed deliveries with no logged month.",
+        "Returns combined Task only rather than required CSR/SDA/STD/eSub split; SUM(dm.Hour) assumes numeric storage."
+      ],
+      "source_sha256": "07ab4266fe4cbc7dfce5c597a2571fcf57afb5dd022809bc2576db6dcbf3dc7b"
+    },
+    {
+      "id": "dashboard_q005",
+      "question": "Person task and time spent on completed deliveries",
+      "retrieval_text": "Person task and time spent on completed deliveries. Show personal effort per finished DID and hours per task. 查看个人每个已完成交付的任务、工时及单位任务耗时。 Person WORKS_ON TIME_ON DIDN_Month Delivery Completed.",
+      "issues": [
+        "SUM(WORKS_ON counts) repeats task volume for multiple time records.",
+        "SUM(DISTINCT t.Hour) incorrectly collapses separate records with equal hour values.",
+        "Missing required CSR/SDA/STD/eSub split and Deliverable_Detail."
+      ],
+      "source_sha256": "75ac897cb3b587b650fcf14cb043b70d2ee36899f7ddfe601b22869694b3b3a1"
+    },
+    {
+      "id": "dashboard_q006",
+      "question": "Ongoing/planned deliveries for a specific person in next 6 months",
+      "retrieval_text": "Ongoing/planned deliveries for a specific person in next 6 months. List personal active delivery commitments and task volume over the next half year. 列出个人未来半年进行中及计划交付和任务量。 Person WORKS_ON Delivery Ongoing Planned Year Month.",
+      "issues": [
+        "Inclusive currentMonth through currentMonth+6 spans seven calendar months.",
+        "Task_Num is combined rather than required CSR/SDA/STD/eSub fields; Deliverable_Detail omitted."
+      ],
+      "source_sha256": "4c0de2a226d769f597ff252842559e67f1664d7715ae68fc4e5894a2ab836e0c"
+    },
+    {
+      "id": "dashboard_q007",
+      "question": "Studies where SDSL is from India site",
+      "retrieval_text": "Studies where SDSL is from India site. Find studies whose designated SDSL belongs to the India office, with study milestones. 查询SDSL来自印度站点的研究及基本信息。 Study SDSL Person FROM_SITE Site India Study_Info.",
+      "issues": [],
+      "source_sha256": "c292d88789e23a698107042850483325173200c69213ae1cd15ec35849e38243"
+    },
+    {
+      "id": "dashboard_q008",
+      "question": "Active Phase III studies and SDSL information",
+      "retrieval_text": "Active Phase III studies and SDSL information. List active third-phase studies with SDSL and reporting leadership. 查询活跃三期研究及SDSL、组负责人和TA负责人。 Study_Info Plan_Phase Plan_Status ACTIVE Study Person.",
+      "issues": [
+        "Assumes PH III spelling for non-controlled Plan_Phase; leadership nonempty flags can accept N and multiple ancestors may duplicate rows."
+      ],
+      "source_sha256": "64afd3b0d32e3e5cca2535ba7fe745b4cac097336a9c56b215ae25ef8dfa3e02"
+    },
+    {
+      "id": "dashboard_q009",
+      "question": "LoT for a specific DID",
+      "retrieval_text": "LoT for a specific DID. Display SDTM ADaM TLF inventory and generation/QC assignments with filenames and output numbers. 查看指定DID的LoT清单、编程质控人员及文件编号。 Delivery HAS_SDTM HAS_ADAM HAS_TLF File_Name TLF_Number.",
+      "issues": [
+        "Uses undocumented TLF.Type rather than TLF_Type.",
+        "OPTIONAL MATCH products can be large and collected all-null item maps can create phantom blank rows."
+      ],
+      "source_sha256": "0237e9475fe345591ab4ad81d9cdff05ee587811a6a8150e488233875f7e9eff"
+    },
+    {
+      "id": "dashboard_q010",
+      "question": "Person tasks for a specific delivery",
+      "retrieval_text": "Person tasks for a specific delivery. Retrieve one person's assigned SDTM ADaM TLF items and output responsibilities within a DID. 查看某人在指定交付中负责的域、TLF及编程QC任务。 Person WORKS_ON Delivery HAS_SDTM HAS_ADAM HAS_TLF.",
+      "issues": [
+        "Uses undocumented TLF.Type rather than TLF_Type.",
+        "Personal combined Task_Num is repeated per output row and lacks required CSR/SDA/STD/eSub split; optional null-item maps may yield blank rows."
+      ],
+      "source_sha256": "8c53a2ba629c82250c178e84c09aa3b71d50876983fc6ed2c41e75aece9a8ece"
+    },
+    {
+      "id": "dashboard_q011",
+      "question": "Team members reporting to recursively identified manager",
+      "retrieval_text": "Team members reporting to recursively identified manager. Resolve a person's management chain then list the selected manager's direct reports. 沿个人汇报链查找经理及其直属团队成员。 Person Manager REPORTS_TO.",
+      "issues": [
+        "Nonempty Manager does not ensure Y; multiple matching manager ancestors create multiple teams rather than selecting nearest manager."
+      ],
+      "source_sha256": "e3d7c06c3dee6c06063e642bba24352d5acc61f21b638681858107d9598207ac"
+    },
+    {
+      "id": "dashboard_q012",
+      "question": "Members working on a study's ongoing/planned deliveries and other active workload",
+      "retrieval_text": "Members working on a study's ongoing/planned deliveries and other active workload. Compare a study team's target-study assignments with their other active delivery commitments. 查看某研究活跃交付人员同时承担的其他研究任务。 Study Person WORKS_ON Delivery DID_Status.",
+      "issues": [
+        "Negative status filter includes Overdue and undocumented TERMINATED rather than explicit Ongoing/Planned.",
+        "Returns nested aggregate task maps rather than required individual-delivery CSR/SDA/STD/eSub and detail fields."
+      ],
+      "source_sha256": "a91a8bc52bbfe84db44aa11b0482670c9e73ae95001bb2b3e460b5ad2c855a59"
+    },
+    {
+      "id": "dashboard_q013",
+      "question": "Task and hour contributions by TA Lead for one delivery",
+      "retrieval_text": "Task and hour contributions by TA Lead for one delivery. Compare TA-lead teams' task contributions, hours and effort per task for a selected DID. 按TA负责人汇总某个交付的任务贡献、工时及效率。 Person TA_Lead REPORTS_TO WORKS_ON TIME_ON Delivery.",
+      "issues": [
+        "Independent CALL subqueries form a cross-product of task TA leads and hour TA leads without joining names, attributing hours to wrong leads.",
+        "Nonempty TA_Lead can include N; output lacks per-delivery task split."
+      ],
+      "source_sha256": "100dfd1b51d9467661b66c1e8e4ef221d1fa272014717df391759bd5bdaf6d4f"
+    },
+    {
+      "id": "dashboard_q014",
+      "question": "Task and hour contributions by Site and Year for completed deliveries",
+      "retrieval_text": "Task and hour contributions by Site and Year for completed deliveries. Aggregate completed task output and logged hours by office and year. 按站点和年份统计完成交付的任务、工时与单位耗时。 Person FROM_SITE Site WORKS_ON TIME_ON DIDN_Month.",
+      "issues": [
+        "Tasks grouped by delivery.Year but hours by DIDN_Month.Year, so ratio can compare different activity periods.",
+        "Aggregate reporting omits required per-delivery task rows."
+      ],
+      "source_sha256": "cfa7b3bd1449a9192dbec357e5680f62f2d5431fde392ef3aa5133714f5376c8"
+    },
+    {
+      "id": "dashboard_q015",
+      "question": "Task and hour contributions by TA Lead for completed deliveries",
+      "retrieval_text": "Task and hour contributions by TA Lead for completed deliveries. Summarize completed delivery task volume and effort for each TA-lead reporting tree. 按TA负责人汇总其团队已完成交付的任务和工时。 Person TA_Lead REPORTS_TO WORKS_ON TIME_ON Delivery.",
+      "issues": [
+        "Nonempty TA_Lead check can include N and multiple reporting paths can duplicate contributions.",
+        "Tasks and hours exclude TA lead's own effort because traversal is 1..; per-delivery task rows absent."
+      ],
+      "source_sha256": "b075ed495f0e54059c8fc98d3c1391d8df15f301068a327cab594cefcaf51fa6"
+    },
+    {
+      "id": "dashboard_q016",
+      "question": "Task and hour contributions by Group Lead under a TA Lead for completed deliveries",
+      "retrieval_text": "Task and hour contributions by Group Lead under a TA Lead for completed deliveries. Break a TA lead's completed delivery output and effort down by group leadership. 在指定TA负责人下按组负责人汇总已完成任务与工时。 Person Group_Lead TA_Lead REPORTS_TO WORKS_ON TIME_ON.",
+      "issues": [
+        "Group_Lead nonempty check can include N; group ancestor is not required to lie below the specified TA lead.",
+        "Multiple hierarchy paths can duplicate task/hour contributions; lead self-contributions and required per-delivery rows omitted."
+      ],
+      "source_sha256": "28f87883c16dc43a9379ad5f95bab8e5a1beaba0c202290ef1c75f4b9ac369ab"
+    },
+    {
+      "id": "sub001",
+      "question": "Please list the studies that contribute to Litfulo vitiligo submission and show study DSP category.",
+      "retrieval_text": "Find studies supporting a submission by project or submission name keywords, with DSP category. 查询递交关联研究及DSP分类。 Study HAS_DELIVERY Delivery HAS_DID0 DID0 SUPPORT_SUBMISSION Submission Project_Name HAS_DETAIL Study_Info DSP_Flag.",
+      "issues": [
+        "Independent optional Delivery and DID0 matches can multiply intermediate rows before DISTINCT; LIMIT 50 can truncate results."
+      ],
+      "source_sha256": "90066ef61133fa3b2db74a0ab9fd957a32457dc06830a5e516a0061ebf0919e5"
+    },
+    {
+      "id": "sub002",
+      "question": "Who in China contributed to Litfulo vitiligo submission",
+      "retrieval_text": "Who in China contributed to Litfulo vitiligo submission. Find China delivery contributors, study SDSL and China PoC for a submission. 查询中国参与递交的人员、研究负责人和中国联络人。 Person WORKS_ON Delivery SUPPORT_SUBMISSION Submission FROM_SITE Site Study SDSL SDSA_China_PoC HAS_DID0 DID0.",
+      "issues": [
+        "UNION removes exact duplicate rows, not duplicate people across roles or evidence lists; do not count rows as unique contributors.",
+        "China PoC may be a study name string without a matching Person or site; LIMIT 50 can truncate role/evidence rows."
+      ],
+      "source_sha256": "987f44b17fdbe5d0af791d79fd7ce5d62473531f4cf446622b4be525f79cf3e2"
+    },
+    {
+      "id": "sub003",
+      "question": "Which teams across China supported Litfulo vitiligo submission",
+      "retrieval_text": "Which teams across China supported Litfulo vitiligo submission. Return distinct team lead names of China contributors supporting a submission. 查询中国支持递交的团队及团队负责人，不列出所有个人。 Person Team_Lead_Name WORKS_ON Delivery SUPPORT_SUBMISSION Submission FROM_SITE Site SDSL.",
+      "issues": [
+        "Only delivery contributors and SDSL reached through Delivery are included; DID0-only studies and China PoC-only contributors are omitted.",
+        "A team is the contributor's current Team_Lead_Name, not necessarily their team when the submission work occurred; LIMIT 50 can truncate teams."
+      ],
+      "source_sha256": "bfb11e9459a95e8f64d11434092adc313d20163e2262ee4ce1272f01e5b9a3db"
+    },
+    {
+      "id": "sub004",
+      "question": "How many datasets and TLFs have been delivered for B798h – Submit NDA (R1, 50 & 100mg, IA) submission",
+      "retrieval_text": "How many datasets and TLFs have been delivered for B798h NDA submission. List delivered SDTM ADaM dataset and TLF counts per delivery using actual delivery dates. 查询递交已交付数据集及TLF数量，按交付逐行返回。 Submission Name Study HAS_DELIVERY Delivery SUPPORT_SUBMISSION Actual_Delivery_Date CSR_SDTM_Num_Total CSR_ADaM_Num_Total CSR_TLF_Num_Total.",
+      "issues": [
+        "Match the compound code and submission type on Submission.Name only; ignore parenthetical dose and round words.",
+        "Returns per-delivery rows rather than a single total; LIMIT 200 can truncate rows, so do not report their sum as an unqualified global total."
+      ],
+      "source_sha256": "af9f3a3b25b3937799a9160ec88fceffed007e6b2c1dcf7b03f2906c02e5043a"
+    }
+  ]
+}

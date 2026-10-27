@@ -146,6 +146,49 @@ When the app is started with `python app.py` or Uvicorn, each completed query
 also writes the same stage breakdown to the server console without logging the
 question text.
 
+### Question-bank retrieval: no classification
+
+The generic Text-to-Cypher path retrieves three complete questions from the
+entire safe example bank, without keyword/category filtering. Topic files are
+source/provenance only, including the existing submission examples.
+`sensitive_excluded.md` remains excluded. Deterministic templates, entity
+presentation, feedback memory, skill/schema guidance and relationship-direction
+checks are preserved.
+
+[`docs/question_bank_review.json`](docs/question_bank_review.json) contains the
+offline review, bilingual retrieval text and cautions for each question. A
+cached, local TF-IDF index ranks these texts by cosine similarity. This is
+**lexical retrieval, not semantic embeddings**; retrieval itself calls neither
+Vox nor Neo4j. Selected examples include their complete Cypher and review
+cautions, rather than truncated file prefixes. Queries with no lexical overlap
+log a warning and receive deterministic zero-score references, not evidence of
+a semantic match.
+
+The default is `QUESTION_RETRIEVAL_MODE=flat_tfidf`, including when unset.
+Set `QUESTION_RETRIEVAL_MODE=legacy_prefix` to restore the existing
+keyword-selected, one-file/2200-character behavior. Both modes retain the
+submission relationship guidance. Set this variable in Connect Vars when
+deploying, and restart/redeploy existing processes after updating.
+
+Publish the review JSON together with the example files. Every question ID,
+title and source SHA-256 must match its review; missing, duplicate or stale
+reviews fail explicitly. Review changed/new examples before updating their
+hashes. Source/review metadata changes invalidate the in-process index.
+
+Run the network-free comparison with:
+
+```cmd
+py benchmark_question_retrieval.py --repeats 30
+```
+
+The generated [comparison report](docs/question_retrieval_comparison.md) and
+[raw results](docs/question_retrieval_results.json) compare flat reviewed Top 3,
+category-filtered Top 3 with the same vectors, original-title Top 3 and the
+legacy file-prefix prompt. The evaluation labels are agent-authored
+paraphrases, not independent human gold judgments. Metrics measure local
+retrieval and prompt characters, not answer correctness, token cost or
+end-to-end latency.
+
 Prediction requests continue with their separate LLM-first parameter extraction,
 Neo4j validation, and V3 model calculation. Python computes P50/P80/P90; the
 LLM does not calculate or alter prediction values.

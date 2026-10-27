@@ -375,3 +375,192 @@ task-specific `max_tokens` limits.
   from model output:` when the model produces no visible content under a tight
   completion cap.
 - Added a regression test covering the empty limited response retry path.
+
+## 2026-09-21 10:10 - Connection reuse latency reduction
+
+### Scope
+
+Reduced per-request connection setup overhead in the two most frequently used
+remote clients: Neo4j and Vox GenAI.
+
+### Changes
+
+- `neo4j_client.get_driver()` now reuses a process-level Neo4j Driver when the
+  URI, username, and password are unchanged. This lets the Neo4j driver reuse
+  its Bolt connection pool across schema reads, person roster reads, main query
+  execution, and repair execution.
+- Added `neo4j_client.close_driver()` and wired FastAPI shutdown to close the
+  shared Driver explicitly.
+- Removed per-query `driver.close()` calls from standard Neo4j helpers and
+  related prediction/allocation modules so they do not close the shared Driver.
+- `vox_client.build_llm_client()` now reuses the OpenAI-compatible Vox client
+  while token, endpoint, and model are unchanged. A changed token or endpoint
+  creates a fresh client.
+- Added regression tests for Neo4j Driver reuse and Vox client reuse.
+
+### Expected effect
+
+Repeated queries no longer pay the full Neo4j Driver and Vox client creation
+cost on every request. This is expected to reduce connection setup overhead,
+especially for multi-step requests that perform person matching, Cypher
+execution, optional repair, and answer generation in one user turn.
+
+## 2026-09-21 11:00 - Person extraction fast path
+
+### Scope
+
+Reduced unnecessary LLM calls before standard query routing by skipping person
+mention extraction for prompts that are clearly non-person English business
+queries.
+
+### Changes
+
+- Added a conservative local classifier in `match_person.py` for non-person
+  English prompts made only from known DID/study/delivery/task/status words.
+- Such prompts now return `status: "no_person"` without calling the person
+  extraction LLM.
+- Prompts with Chinese text, self references, comma-formatted names, or unknown
+  English words still use the original LLM extraction and roster matching path.
+- Added regression tests proving delivery/status questions skip extraction,
+  while `Lu, Manman`-style person questions still call the extractor.
+
+### Expected effect
+
+Common non-person questions such as delivery counts, DID status, and study
+delivery lists avoid one Vox round-trip before Cypher generation. Person-related
+questions retain the existing safer extraction and disambiguation behavior.
+
+## 2026-09-21 13:50 - Deterministic query templates and local answers
+
+### Scope
+
+Added a higher-impact latency path for common simple business questions that
+were still dominated by Cypher and answer LLM calls.
+
+### Changes
+
+- Added deterministic Cypher templates for common DID/study questions:
+  - DID status
+  - DID planned/actual delivery date
+  - Study delivery list
+  - Study completed delivery list
+  - next-month delivery count
+- Template detection now runs in the `prepare` node. When a template matches,
+  the workflow skips live schema loading, domain-context construction, and
+  `cypher_generation`.
+- Template results use local answer formatting for status, date, count, and
+  delivery-list summaries, avoiding `answer_generation`.
+- Added regression tests proving matched templates do not call `_chat()`,
+  `get_schema()`, or `_build_domain_context()`.
+
+### Expected effect
+
+High-frequency questions such as `Show DID C1071007_142 status` and
+`List completed deliveries for study C1071007` now run through local template
+generation plus Neo4j execution, instead of two LLM calls. Stage timings for
+these matches should omit both `cypher_generation` and `answer_generation`.
+
+## 2026-09-24 15:54 - Structured thumbs-up/down learning feedback
+
+### Scope
+
+Improved the answer-feedback workflow so that thumbs-up/down actions provide
+usable learning signals for similar future Cypher queries, while preserving the
+existing positive-example reuse and rejected-pattern avoidance behavior.
+
+### Changes
+
+### 1. Structured in-page negative feedback
+
+- Replaced the two browser prompt dialogs previously shown after a thumbs-down
+  click with an in-page feedback panel.
+- Users must select one reason before submitting a negative vote:
+  - query logic
+  - incorrect data
+  - missing data
+  - wrong person
+  - presentation
+  - other
+- Users can optionally describe the expected answer or correction in a
+  1,000-character note.
+- The selected reason and note are stored with the original question and
+  Cypher case, allowing rejected examples to explain what the generator must
+  avoid.
+
+### 2. Clearer feedback state and correction
+
+- The answer card now explains that feedback improves similar future queries.
+- Selected thumbs-up/down buttons have a visible state and accessible
+  `aria-pressed` value.
+- A user can change a prior vote by selecting the opposite button; the
+  existing case record is updated rather than creating a duplicate case.
+- The feedback controls are disabled only while the request is being saved and
+  are restored if the API request fails.
+
+### 3. Feedback API validation
+
+- `FeedbackBody.vote` now accepts only `1` or `-1`.
+- Positive feedback is normalized to the `helpful` reason; a positive vote
+  cannot be submitted with a negative-feedback reason.
+- Negative feedback continues to allow only the supported issue categories.
+- Feedback notes are constrained to 1,000 characters.
+- The feedback response includes the normalized reason, making the persisted
+  learning signal explicit to API clients.
+
+### 4. Learning and observability
+
+- Existing behavior is retained:
+  - thumbs-up cases are retrieved as user-endorsed few-shot Cypher examples
+    for similar questions;
+  - thumbs-down cases are retrieved as rejected patterns, together with their
+    reason and note, so the generator can avoid repeating the reported error.
+- `/api/stats` now includes `feedback_reasons`, grouped separately into
+  `positive` and `negative` vote counts. The existing **Stats** UI can display
+  the raw response to show the most common rejection categories.
+
+### Before-and-after comparison
+
+| Area | Before | After |
+|---|---|---|
+| Negative-feedback collection | Two browser dialogs requested a reason code and an optional note. | An in-page panel provides six reason choices and an optional correction note; submission requires a selected reason. |
+| Feedback state | Button disablement primarily indicated the chosen vote. | The current vote is highlighted and exposed through `aria-pressed`; users can still switch their vote. |
+| Positive-feedback reason | Positive votes could retain the generic `other` reason. | Positive feedback uses `helpful`, and incompatible negative reasons are rejected. |
+| Input validation | Integer votes were normalized by sign without a strict API vote constraint. | The API accepts only `1` or `-1` and limits notes to 1,000 characters. |
+| Observability | Statistics counted total cases and positive/negative votes. | Statistics also group the current feedback by reason, separately for each vote direction. |
+| Example reuse | Positive and negative examples were already available to Cypher generation. | The mechanism is preserved, with more specific negative reasons and correction notes collected through the UI. |
+
+### Learning boundaries
+
+Documentation clarification added on 2026-10-13; this does not describe a new
+implementation change.
+
+- Feedback is persisted in the SQLite case memory with the original question
+  and Cypher. Changing a vote updates that case's current feedback rather than
+  creating a duplicate case or an append-only voting history.
+- LLM Cypher generation retrieves up to three positive examples and two
+  negative examples, ranked against the question. Retrieval is lexical
+  (BM25-style), with fallback examples when no positive relevance score is
+  available; relevance and correctness are not guaranteed by a vote alone.
+- This is example retrieval and prompt-context reuse, not model fine-tuning.
+  A thumbs-down does not automatically regenerate the current answer, execute
+  a suggested correction, or modify Neo4j data.
+- Deterministic local Cypher templates bypass LLM generation and are not
+  automatically changed by this feedback.
+- Answers without a recordable case cannot save feedback. Reason statistics
+  describe current case votes, not unique-user counts or measured accuracy
+  improvements.
+
+### Validation
+
+- Added tests for positive-feedback reason normalization and rejection of
+  incompatible positive-feedback reasons.
+- Added a memory-statistics test for positive and negative reason aggregation.
+- Ran `python -m unittest test_app test_example_memory`: 11 tests passed.
+- Confirmed Python syntax and IDE diagnostics are clean for the touched Python
+  files.
+- Loaded the local FastAPI app in a browser and verified that the thumbs-down
+  panel displays reason choices, an optional note field, and a disabled submit
+  button until a reason is selected.
+- Before the 2026-09-24 push, the complete unit-test suite passed: 80 tests.
+  These are historical implementation checks; no tests were rerun for the
+  2026-10-13 documentation-only clarification.
