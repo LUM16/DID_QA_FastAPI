@@ -1,7 +1,7 @@
 """HCE (resource utilization) calculation.
 
 Strategy: one parameterized Cypher query aggregates hours per person inside
-Neo4j; calendar logic (working days, holidays, onboard/offboard proration)
+Neo4j; calendar logic (Mon-Fri working days, onboard/offboard proration)
 is done in Python.
 
 Definitions
@@ -20,57 +20,28 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
-from functools import lru_cache
 from typing import Any
 from neo4j_client import get_driver
-import holidays as _holidays
 
 
 # ---------------------------------------------------------------------------
-# Holiday configuration
+# Calendar: working days = Monday-Friday (holidays are ignored)
 # ---------------------------------------------------------------------------
 
-# Person.Site -> ISO country code used by the `holidays` package.
-SITE_TO_COUNTRY: dict[str, str] = {
-    "China": "CN",
-    "United States": "US",
-    "India": "IN",
-    # "Japan": "JP",
-}
 
-# Weekend days that are official working days (e.g. China make-up workdays).
-EXTRA_WORKDAYS: dict[str, set[date]] = {
-    "CN": {
-        # 2026 (State Council holiday notice)
-        date(2026, 1, 4),  # Sun, New Year
-        date(2026, 2, 14),  # Sat, Spring Festival
-        date(2026, 2, 28),  # Sat, Spring Festival
-        date(2026, 5, 9),  # Sat, Labour Day
-        date(2026, 9, 20),  # Sun, National Day
-        date(2026, 10, 10),  # Sat, National Day
-    },
-}
+def is_workday(d: date) -> bool:
+    return d.weekday() < 5
 
 
-@lru_cache(maxsize=None)
-def _holiday_set(country: str | None, year: int) -> frozenset[date]:
-    if country is None or _holidays is None:
-        return frozenset()
-    return frozenset(_holidays.country_holidays(country, years=year).keys())
-
-
-def is_workday(d: date, country: str | None) -> bool:
-    if country and d in EXTRA_WORKDAYS.get(country, set()):
-        return True
-    return d.weekday() < 5 and d not in _holiday_set(country, d.year)
-
-
-def workdays(start: date, end: date, country: str | None) -> int:
-    """Working days in [start, end], inclusive."""
-    n, d = 0, start
-    while d <= end:
-        n += is_workday(d, country)
-        d += timedelta(days=1)
+def workdays(start: date, end: date) -> int:
+    """Mon-Fri days in [start, end], inclusive (0 if end < start)."""
+    if end < start:
+        return 0
+    days = (end - start).days + 1
+    full_weeks, rest = divmod(days, 7)
+    n = full_weeks * 5
+    wd = start.weekday()
+    n += sum(1 for i in range(rest) if (wd + i) % 7 < 5)
     return n
 
 
@@ -84,7 +55,6 @@ def month_hce(
     month: int,
     onboard: date | None,
     offboard: date | None,
-    country: str | None = None,
 ) -> float:
     first = date(year, month, 1)
     last = date(year, month, calendar.monthrange(year, month)[1])
@@ -92,8 +62,8 @@ def month_hce(
     active_end = min(last, offboard) if offboard else last
     if active_end < active_start:
         return 0.0  # before onboard / after offboard
-    total = workdays(first, last, country)
-    return workdays(active_start, active_end, country) / total if total else 0.0
+    total = workdays(first, last)
+    return workdays(active_start, active_end) / total if total else 0.0
 
 
 def _month_range(start: date, end: date) -> list[tuple[int, int]]:
@@ -109,10 +79,9 @@ def total_hce(
     end: date,
     onboard: date | None,
     offboard: date | None,
-    country: str | None = None,
 ) -> float:
     return sum(
-        month_hce(y, m, onboard, offboard, country) for y, m in _month_range(start, end)
+        month_hce(y, m, onboard, offboard) for y, m in _month_range(start, end)
     )
 
 
@@ -255,19 +224,17 @@ def _fetch_rows(
         **p_params,
         **f_params,
     }
+    # get_driver() returns a shared cached driver; do not close it here
+    # (close_driver() is responsible for that).
     driver = get_driver()
-    try:
-        with driver.session(database=os.environ.get("NEO4J_DATABASE", "neo4j")) as s:
-            return [r.data() for r in s.run(query, **params)]
-    finally:
-        driver.close()
+    with driver.session(database=os.environ.get("NEO4J_DATABASE", "neo4j")) as s:
+        return [r.data() for r in s.run(query, **params)]
 
 
 def _compute(rows: list[dict[str, Any]], start: date, end: date) -> list[PersonHCE]:
     results = []
     for r in rows:
-        country = SITE_TO_COUNTRY.get(r["site"])
-        hce = total_hce(start, end, _to_date(r["onboard"]), _to_date(r["offboard"]), country)
+        hce = total_hce(start, end, _to_date(r["onboard"]), _to_date(r["offboard"]))
         tot, feat = r["total_hours"], r["feature_hours"]
         results.append(
             PersonHCE(
@@ -320,6 +287,8 @@ def department_hce(
 
 
 if __name__ == "__main__":
+
+    # 整个部门的feature HCE
     total, people = department_hce(
         date(2026, 1, 1), 
         date(2026, 6, 30),
