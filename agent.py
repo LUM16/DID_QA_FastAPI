@@ -43,6 +43,7 @@ from question_retrieval import (
     select_example_files,
 )
 from vox_client import add_usage, chat as _chat, empty_usage
+from hce_agent import answer_hce, classify_hce_intent
 
 log = logging.getLogger(__name__)
 
@@ -1741,10 +1742,22 @@ def ask(
     load_env()
     started = time.perf_counter()
     local_cypher = template_cypher(question)
+    if not local_cypher:
+        is_hce, hce_usage = classify_hce_intent(question, history)
+        if is_hce:
+            result = answer_hce(
+                question,
+                history,
+                initial_usage=hce_usage,
+                initial_timings={"intent": _elapsed_ms(started)},
+            )
+            result["schema"] = schema
+            return result
     if local_cypher:
         is_prediction, intent_usage = False, empty_usage()
     else:
         is_prediction, intent_usage = classify_effort_prediction_intent(question, history)
+        intent_usage = add_usage(hce_usage, intent_usage)
     timings = {"intent": _elapsed_ms(started)}
     if is_prediction:
         try:

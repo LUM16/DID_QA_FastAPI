@@ -47,6 +47,8 @@ TIMING_STAGE_ORDER = (
     "cypher_repair",
     "prediction_parameters",
     "prediction_model",
+    "hce_parameters",
+    "hce_calculation",
     "entity_details",
     "presentation",
     "answer_generation",
