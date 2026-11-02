@@ -177,13 +177,8 @@
   <div id="hlist"><div class="hempty">No queries yet.</div></div>
   <div id="utility">
     <div class="util-row" id="copilot-tools">
-      <label id="copilot-token-wrap" class="muted" hidden>GitHub token
-        <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." />
-      </label>
-      <label id="copilot-ntid-wrap" class="muted" hidden>NTID
-        <input id="copilot-ntid" type="text" autocomplete="username" placeholder="user.name" />
-      </label>
-      <button id="copilot-save" hidden type="button">Save token</button>
+      <input id="copilot-ntid" type="hidden" />
+      <button id="copilot-settings" hidden type="button">GitHub token</button>
       <button id="copilot-help" class="iconbtn" hidden type="button" title="How to get a GitHub token" aria-label="How to get a GitHub token">?</button>
       <span id="copilot-status" class="muted" hidden></span>
     </div>
@@ -211,6 +206,15 @@
     </select>
   </label>
 </header>
+<dialog id="copilot-token-dialog" aria-labelledby="copilot-token-title">
+  <h2 id="copilot-token-title">GitHub Copilot Token</h2>
+  <label for="copilot-token">GitHub token</label>
+  <input id="copilot-token" type="password" autocomplete="off" placeholder="github_pat_..." style="display:block;width:100%;margin-top:6px" />
+  <div class="dialog-actions">
+    <button id="copilot-token-close" type="button">Close</button>
+    <button id="copilot-save" type="button">Save token</button>
+  </div>
+</dialog>
 <dialog id="copilot-help-dialog" aria-labelledby="copilot-help-title">
   <h2 id="copilot-help-title">Get a GitHub Copilot Token</h2>
   <ol>
@@ -219,7 +223,7 @@
     <li>For Resource owner, select your personal GitHub account. Set Repository access to No repositories.</li>
     <li>Under Account permissions, set Copilot Requests to Read-only. Do not grant repository, organization, or other permissions for this app.</li>
     <li>Choose the shortest expiration permitted by your organization, generate the token, and copy it immediately. GitHub only displays the full token once.</li>
-    <li>Paste the token into the GitHub token field, enter your NTID, and select Save token.</li>
+    <li>Open GitHub token, paste the token, and select Save token.</li>
   </ol>
   <p class="muted">If Copilot Requests is unavailable, your account may not have a Copilot entitlement or your organization may restrict personal access tokens. Contact your GitHub organization administrator. Never share a token, commit it to a repository, or include it in screenshots.</p>
   <div class="dialog-actions"><button id="copilot-help-close" type="button">Close</button></div>
@@ -891,7 +895,7 @@ async function refreshCopilotTokenStatus(){
     const query=ntid?`?posit_connect_ntid=${encodeURIComponent(ntid)}`:'';
     const result=await api(`/api/copilot/token${query}`);
     copilotTokenSaved=!!result.saved;
-    status.textContent=result.saved?`Saved token ready (${result.ntid})`:'No saved token';
+    status.textContent=result.saved?'Saved token ready':'No saved token';
   }catch(e){
     copilotTokenSaved=false;
     status.textContent='Token vault unavailable';
@@ -900,15 +904,15 @@ async function refreshCopilotTokenStatus(){
 }
 function syncCopilotControls(){
   const active=selectedProvider()==='github_copilot';
-  $('#copilot-token-wrap').hidden=!active;
-  $('#copilot-ntid-wrap').hidden=!active;
-  $('#copilot-save').hidden=!active;
+  $('#copilot-settings').hidden=!active;
   $('#copilot-help').hidden=!active;
   $('#copilot-status').hidden=!active;
   if(active) refreshCopilotTokenStatus();
-  if(active&&!copilotToken()) $('#copilot-token').focus();
+  if(!active&&$('#copilot-token-dialog').open) $('#copilot-token-dialog').close();
 }
 $('#provider').onchange=syncCopilotControls;
+$('#copilot-settings').onclick=()=>$('#copilot-token-dialog').showModal();
+$('#copilot-token-close').onclick=()=>$('#copilot-token-dialog').close();
 $('#copilot-help').onclick=()=>$('#copilot-help-dialog').showModal();
 $('#copilot-help-close').onclick=()=>$('#copilot-help-dialog').close();
 {
@@ -934,18 +938,16 @@ $('#copilot-help-close').onclick=()=>$('#copilot-help-dialog').close();
   };
   title.onpointerup=event=>title.releasePointerCapture(event.pointerId);
 }
-$('#copilot-ntid').onchange=()=>{
-  if(selectedProvider()==='github_copilot') refreshCopilotTokenStatus();
-};
 $('#copilot-save').onclick=async()=>{
   const token=copilotToken();
   if(!token){$('#copilot-token').focus();toast('Enter a GitHub token first.');return;}
   const button=$('#copilot-save');button.disabled=true;
   try{
     await resolvePositConnectNtid();
-    const result=await api('/api/copilot/token',{github_token:token,...copilotIdentityPayload()});
+    await api('/api/copilot/token',{github_token:token,...copilotIdentityPayload()});
     $('#copilot-token').value='';copilotTokenSaved=true;
-    $('#copilot-status').textContent=`Saved token ready (${result.ntid})`;
+    $('#copilot-status').textContent='Saved token ready';
+    $('#copilot-token-dialog').close();
     toast('GitHub Copilot token saved.');
   }catch(e){toast(`Token save failed: ${e.message}`);}
   finally{button.disabled=false;}
