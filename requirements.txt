@@ -7,7 +7,8 @@ requests>=2.31.0
 joblib>=1.3.0
 numpy>=1.26.0
 rapidfuzz>=3.0.0
-scikit-learn==1.9.1
+# 1.9.1 matches the saved model but is absent from the Pfizer Connect index.
+scikit-learn>=1.7.2,<1.9.1
 python-multipart>=0.0.18
 openpyxl>=3.1.0
 langgraph>=0.2.0
