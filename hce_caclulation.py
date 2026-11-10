@@ -190,7 +190,15 @@ def _to_date(value: Any) -> date | None:
 
 _PROP_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-Filter = dict[str, Any]  # {property: value} ; list value -> IN ; None -> IS NULL
+Filter = dict[str, Any]
+# {property: value}; list -> IN; None -> IS NULL;
+# {"from": date|None, "to": date|None} -> inclusive range (either bound optional)
+
+
+def _range_bounds(value: Any) -> tuple[Any, Any] | None:
+    if isinstance(value, dict) and set(value) <= {"from", "to"}:
+        return value.get("from"), value.get("to")
+    return None
 
 
 def _build_where(alias: str, filters: Filter | None, prefix: str) -> tuple[str, dict]:
@@ -208,6 +216,18 @@ def _build_where(alias: str, filters: Filter | None, prefix: str) -> tuple[str, 
         key = f"{prefix}{i}"
         if value is None:
             clauses.append(f"{alias}.`{prop}` IS NULL")
+            continue
+        bounds = _range_bounds(value)
+        if bounds is not None:
+            low, high = bounds
+            if low is not None:
+                clauses.append(f"{alias}.`{prop}` >= ${key}_from")
+                params[f"{key}_from"] = low
+            if high is not None:
+                clauses.append(f"{alias}.`{prop}` <= ${key}_to")
+                params[f"{key}_to"] = high
+            if low is None and high is None:
+                clauses.append(f"{alias}.`{prop}` IS NOT NULL")
             continue
         if isinstance(value, (list, tuple, set)):
             clauses.append(f"{alias}.`{prop}` IN ${key}")

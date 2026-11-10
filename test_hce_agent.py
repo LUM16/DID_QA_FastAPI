@@ -50,13 +50,53 @@ class ValidateTests(unittest.TestCase):
 
     def test_scalar_becomes_list_and_missing_time(self):
         p = ha.validate_hce_parameters({"mode": "department",
-                                        "feature_filter": {"Study_Info.TA": "Oncology"}})
-        self.assertEqual(p["feature_filter"], {"Study_Info.TA": ["Oncology"]})
+                                        "feature_filter": {"Study_Info.Derived_TA": "Oncology"}})
+        self.assertEqual(p["feature_filter"], {"Study_Info.Derived_TA": ["Oncology"]})
         self.assertIsNone(p["start"])
 
     def test_person_requires_name(self):
         with self.assertRaises(ValueError):
             ha.validate_hce_parameters({"mode": "person", "start": "2026-01-01", "end": "2026-01-31"})
+
+
+class FeatureValueTests(unittest.TestCase):
+    def _ff(self, ff):
+        return ha.validate_hce_parameters({"mode": "department", "feature_filter": ff})["feature_filter"]
+
+    def test_whole_phase_includes_subphases_and_cross_phase(self):
+        self.assertEqual(self._ff({"Study_Info.Plan_Phase": "Phase 3"})["Study_Info.Plan_Phase"],
+                         ["PH III", "PH IIIA", "PH IIIB", "PH II PH III"])
+        self.assertEqual(self._ff({"Study_Info.Plan_Phase": ["一期"]})["Study_Info.Plan_Phase"],
+                         ["PH I", "PH IB PHII"])
+
+    def test_specific_subphase_stays(self):
+        self.assertEqual(self._ff({"Study_Info.Plan_Phase": "PH IIIA"})["Study_Info.Plan_Phase"], ["PH IIIA"])
+
+    def test_enum_case_and_aliases(self):
+        out = self._ff({"Study_Info.Study_Type": "observational", "Study_Info.Derived_TA": "oncology"})
+        self.assertEqual(out["Study_Info.Study_Type"], ["NON INTERVENTIONAL"])
+        self.assertEqual(out["Study_Info.Derived_TA"], ["Oncology"])
+
+    def test_unknown_enum_value_rejected_with_choices(self):
+        with self.assertRaisesRegex(ValueError, "choose from: I&I"):
+            self._ff({"Study_Info.Derived_TA": "Cardiology"})
+
+    def test_old_ta_key_rejected(self):
+        with self.assertRaises(ValueError):
+            self._ff({"Study_Info.TA": "Oncology"})
+
+    def test_date_range(self):
+        out = self._ff({"Study_Info.FSFV": {"from": "2025-01-01", "to": None}})
+        self.assertEqual(out["Study_Info.FSFV"], {"from": date(2025, 1, 1), "to": None})
+        with self.assertRaises(ValueError):
+            self._ff({"Study_Info.DBR": {"from": "2026-05-01", "to": "2026-01-01"}})
+        with self.assertRaises(ValueError):
+            self._ff({"Study_Info.DBR": "2026"})
+
+    def test_range_where_clause(self):
+        where, params = h._build_where("si", {"FSFV": {"from": date(2025, 1, 1), "to": None}}, "x")
+        self.assertEqual(where, "si.`FSFV` >= $x0_from")
+        self.assertEqual(params, {"x0_from": date(2025, 1, 1)})
 
 
 class AnswerTests(unittest.TestCase):

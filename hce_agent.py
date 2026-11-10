@@ -28,15 +28,95 @@ HCE_CANDIDATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# user wording -> filter key (traversal path handled by hce_caclulation)
+# Free-text feature keys (validated only for shape).
 FEATURE_KEYS: dict[str, str] = {
-    "Study_Info.Study_Type": "study type, e.g. INTERVENTIONAL / OBSERVATIONAL",
-    "Study_Info.Derived_TA": "therapeutic area, e.g. Oncology, Vaccines, I&I, Internal Medicine, Other",
     "Study_Info.Name": "study number, e.g. C1071032",
     "DIDN_Month.DID": "DID, e.g. C5841001_16",
-    "Study_Info.Plan_Phase": "study phase",
-    "Study_Info.Study_Priority": "study priority",
 }
+
+# Closed-vocabulary feature keys. Values are hard-coded from Neo4j
+# (Study_Info, checked 2026-11-10); update here when the source data changes.
+FEATURE_ENUMS: dict[str, tuple[str, ...]] = {
+    "Study_Info.Study_Type": ("INTERVENTIONAL", "NON INTERVENTIONAL"),
+    "Study_Info.Derived_TA": ("I&I", "Internal Medicine", "Oncology", "Other", "Vaccines"),
+    "Study_Info.Plan_Phase": (
+        "PH I", "PH IB PHII", "PH II", "PH IIA", "PH IIB", "PH II PH III",
+        "PH III", "PH IIIA", "PH IIIB", "PH IV",
+    ),
+    "Study_Info.Study_Priority": (
+        "Accelerate", "Funded", "Maintain", "Not in Scope",
+        "Priority 1", "Priority 2", "Priority 3", "Streamline",
+    ),
+    "Study_Info.Registry_Status": (
+        "APPROVED", "CANCELLED", "COMPLETED", "CONCEPT",
+        "NOT PURSUED", "ONGOING", "PLANNED", "TERMINATED",
+    ),
+    "Study_Info.Subject_Type": (
+        "BOTH (PATIENTS AND VOLUNTEERS)", "NO SUBJECTS", "PATIENTS", "VOLUNTEERS",
+    ),
+    "Study_Info.Business_Rationale": (
+        "ClinPharm", "ClinPharm_Critical Path to Sub", "Critical Path Study for Submission",
+        "Exploratory", "Marketed Product Support (Label Enhancement)", "Other",
+        "Ph 1_Ph 2 Non Pivotal", "Pivotal", "Pivotal_Critical Path To Sub",
+        "Post Approval Commitment",
+        "Post Trial Access Strategy (PTAS) \\ Expanded Access \\ Long Term Follow Up (LTFU)",
+    ),
+    "Study_Info.Study_Design": (
+        "ADME", "BA_BE", "Basket Study [MAMS / MP]", "Bridging", "DDI", "ESoE", "FIH",
+        "FIH_POM_ESoE Complex", "Food Effect", "Hepatic Impairment", "MAD", "Methodology",
+        "Non-Regulatory Inline", "Other", "PK_PD_Biomarker", "PMC-Post Marketing Commitment",
+        "PMR-Post Marketing Requirement", "Platform Study [MAMS / MP]",
+        "Post Market Clinical Study", "Renal Impairment", "SAD", "SAD/MAD",
+        "SAD/MAD with cohorts", "TQT", "Taste Study",
+    ),
+    "Study_Info.DSP_Flag": (
+        "Exempt: Nexus", "Non-exempt: US + ROW", "Non-exempt: US only", "Permissible: No US data",
+    ),
+    "Study_Info.DSP_Nexus_Flag": ("China Nexus", "N", "NO US FOOTPRINT", "No China Nexus", "Not Nexus"),
+    "Study_Info.DSP_Nexus_Country": ("CHINA", "CHINA;RUSSIA", "RUSSIA"),
+    "Study_Info.DSP_Approved_2026_Exception": ("N", "Y"),
+    "Study_Info.DSP_Apply_2_Step": ("N", "Y"),
+    "Study_Info.DSP_China_Site_iPort": ("N", "Y"),
+    "Study_Info.DSP_US_Site": ("N", "Y"),
+    "Study_Info.DSP_US_Site_Only": ("N", "Y"),
+}
+
+# Common user wording -> stored value (matched case-insensitively).
+FEATURE_ALIASES: dict[str, dict[str, str]] = {
+    "Study_Info.Study_Type": {
+        "OBSERVATIONAL": "NON INTERVENTIONAL",
+        "NON-INTERVENTIONAL": "NON INTERVENTIONAL",
+        "NONINTERVENTIONAL": "NON INTERVENTIONAL",
+    },
+    "Study_Info.Derived_TA": {
+        "INFLAMMATION & IMMUNOLOGY": "I&I",
+        "INFLAMMATION AND IMMUNOLOGY": "I&I",
+        "I & I": "I&I",
+        "VAX" : "Vaccines",
+        "ONC" : "Oncology"
+    },
+}
+
+# A whole phase includes its sub-phases and any cross-phase value touching it;
+# a specific sub-phase (e.g. "PH IIIA") stays as is.
+PHASE_FAMILIES: dict[str, tuple[str, ...]] = {
+    "PH I": ("PH I", "PH IB PHII"),
+    "PH II": ("PH II", "PH IIA", "PH IIB", "PH IB PHII", "PH II PH III"),
+    "PH III": ("PH III", "PH IIIA", "PH IIIB", "PH II PH III"),
+    "PH IV": ("PH IV",),
+}
+
+# Date feature keys -> description. Value: {"from": date|None, "to": date|None}.
+FEATURE_DATE_KEYS: dict[str, str] = {
+    "Study_Info.FSFV": "first subject first visit date",
+    "Study_Info.LSLV": "last subject last visit date",
+    "Study_Info.DBR": "database release date",
+    "Study_Info.PCD": "primary completion date",
+    "Study_Info.FAP": "final approved protocol date",
+}
+
+ALL_FEATURE_KEYS = (*FEATURE_KEYS, *FEATURE_ENUMS, *FEATURE_DATE_KEYS)
+
 GROUP_KEYS: dict[str, str] = {
     "Site": "site, e.g. China / US / India",
     "Team_Lead_Name": "team lead name",
@@ -109,6 +189,84 @@ def _clean_filter(raw: Any, allowed: dict[str, str]) -> dict[str, Any]:
     return out
 
 
+def _canon(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value).strip()).upper()
+
+
+_PHASE_NUM = {"1": "I", "2": "II", "3": "III", "4": "IV", "一": "I", "二": "II", "三": "III", "四": "IV"}
+
+
+def _phase_alias(text: str) -> str | None:
+    """'Phase 3', 'P3', 'Ph III', '三期', 'PH 3A' -> 'PH III' / 'PH IIIA'."""
+    match = re.fullmatch(
+        r"(?:PHASE|PH|P)?\s*([1-4一二三四]|IV|I{1,3})\s*([AB])?\s*(?:期)?", _canon(text)
+    )
+    if not match:
+        return None
+    roman = _PHASE_NUM.get(match.group(1), match.group(1))
+    return f"PH {roman}{match.group(2) or ''}"
+
+
+def _enum_values(key: str, raw: Any) -> list[str]:
+    allowed = FEATURE_ENUMS[key]
+    by_canon = {_canon(v): v for v in allowed}
+    aliases = {_canon(k): v for k, v in FEATURE_ALIASES.get(key, {}).items()}
+    out: list[str] = []
+    for item in raw if isinstance(raw, list) else [raw]:
+        text = _canon(item)
+        value = by_canon.get(text) or aliases.get(text)
+        if value is None and key == "Study_Info.Plan_Phase":
+            value = by_canon.get(_canon(_phase_alias(text) or ""))
+        if value is None:
+            raise ValueError(
+                f"Unsupported value {item!r} for {key}; choose from: {', '.join(allowed)}"
+            )
+        if key == "Study_Info.Plan_Phase":
+            expanded = PHASE_FAMILIES.get(value, (value,))
+        else:
+            expanded = (value,)
+        out.extend(v for v in expanded if v not in out)
+    return out
+
+
+def _date_range(key: str, raw: Any) -> dict[str, date | None]:
+    if not isinstance(raw, dict) or not set(raw) <= {"from", "to"}:
+        raise ValueError(f'{key} needs {{"from": "YYYY-MM-DD"|null, "to": "YYYY-MM-DD"|null}}')
+    bounds: dict[str, date | None] = {}
+    for side in ("from", "to"):
+        value = raw.get(side)
+        if value in (None, ""):
+            bounds[side] = None
+        elif isinstance(value, str) and _ISO_DATE.match(value):
+            bounds[side] = date.fromisoformat(value)
+        else:
+            raise ValueError(f"{key}.{side} must be YYYY-MM-DD or null, got {value!r}")
+    if bounds["from"] is None and bounds["to"] is None:
+        raise ValueError(f"{key} needs at least one of from/to.")
+    if bounds["from"] and bounds["to"] and bounds["to"] < bounds["from"]:
+        raise ValueError(f"{key}: 'to' is earlier than 'from'.")
+    return bounds
+
+
+def _clean_feature_filter(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key, value in raw.items():
+        if key not in ALL_FEATURE_KEYS:
+            raise ValueError(
+                f"Unsupported filter key: {key} (allowed: {', '.join(ALL_FEATURE_KEYS)})"
+            )
+        if value in (None, "", [], {}):
+            continue
+        if key in FEATURE_ENUMS:
+            out[key] = _enum_values(key, value)
+        elif key in FEATURE_DATE_KEYS:
+            out[key] = _date_range(key, value)
+        else:
+            out.update(_clean_filter({key: value}, FEATURE_KEYS))
+    return out
+
 def validate_hce_parameters(payload: dict[str, Any]) -> dict[str, Any]:
     mode = payload.get("mode")
     if mode not in {"person", "department"}:
@@ -124,7 +282,7 @@ def validate_hce_parameters(payload: dict[str, Any]) -> dict[str, Any]:
         "persons": persons,
         "start": None if missing_time else date.fromisoformat(start),
         "end": None if missing_time else date.fromisoformat(end),
-        "feature_filter": _clean_filter(payload.get("feature_filter"), FEATURE_KEYS),
+        "feature_filter": _clean_feature_filter(payload.get("feature_filter")),
         "group_filter": _clean_filter(payload.get("group_filter"), GROUP_KEYS),
     }
     if params["start"] and params["end"] and params["end"] < params["start"]:
@@ -139,25 +297,35 @@ def extract_hce_parameters(
     chat: ChatFn = _chat,
 ) -> tuple[dict[str, Any], dict[str, int]]:
     today = today or date.today()
-    feature_doc = "\n".join(f'  "{k}": {v}' for k, v in FEATURE_KEYS.items())
+    feature_doc = "\n".join(
+        [f'  "{k}": {v} (free text)' for k, v in FEATURE_KEYS.items()]
+        + [f'  "{k}": one or more of {json.dumps(list(v), ensure_ascii=False)}'
+           for k, v in FEATURE_ENUMS.items()]
+        + [f'  "{k}": {v}; value {{"from": "YYYY-MM-DD"|null, "to": "YYYY-MM-DD"|null}}'
+           for k, v in FEATURE_DATE_KEYS.items()]
+    )
     group_doc = "\n".join(f'  "{k}": {v}' for k, v in GROUP_KEYS.items())
     system = f"""Extract HCE calculation parameters. Today is {today.isoformat()}.
 Return ONE JSON object:
 {{"mode": "person" | "department",
   "persons": [official names or NTIDs exactly as written in the question],
   "start": "YYYY-MM-DD" | null, "end": "YYYY-MM-DD" | null,
-  "feature_filter": {{key: [values]}},
+  "feature_filter": {{key: [values] or {{"from":..,"to":..}} for date keys}},
   "group_filter": {{key: [values]}}}}
 
 Rules:
 - mode=person when specific people are named; otherwise department.
-- Resolve relative periods (first half of this year, Q1, last month, last 3 months) using today.
-  Use first day of start month and last day of end month.
-  If the question and conversation give NO period, set start and end to null.
-- feature_filter: only when the user restricts which work counts. Allowed keys:
+- start/end is the HCE period. Resolve relative periods (first half of this year, Q1,
+  last month, last 3 months) using today. Use first day of start month and last day of
+  end month. If the question and conversation give NO period, set start and end to null.
+- feature_filter: only when the user restricts which work (studies) counts. Allowed keys:
 {feature_doc}
   Study numbers like C1071032 -> Study_Info.Name; IDs with _<digits> -> DIDN_Month.DID.
-  Study_Type values are uppercase (INTERVENTIONAL, OBSERVATIONAL).
+  For listed keys copy values exactly from the list. Observational -> "NON INTERVENTIONAL".
+  Phase: "Phase 3"/"三期" -> "PH III" (sub-phases are added automatically); a specific
+  sub-phase such as "Phase 3A" -> "PH IIIA".
+  Study date conditions (e.g. "studies with FSFV in 2025", "DBR before 2026-06") go to the
+  date keys and are separate from the HCE period.
   If no restriction, use {{}}.
 - group_filter (department only): which people are included. Allowed keys:
 {group_doc}
@@ -173,10 +341,19 @@ Rules:
 # ---------------------------------------------------------------------------
 
 
+def _value_text(value: Any) -> str:
+    if isinstance(value, dict):
+        low, high = value.get("from"), value.get("to")
+        if low and high:
+            return f"{low} ~ {high}"
+        return f">= {low}" if low else f"<= {high}"
+    return f"∈ {', '.join(map(str, value))}"
+
+
 def _filter_text(filters: dict[str, Any]) -> str:
     if not filters:
         return "none (all hours)"
-    return "; ".join(f"{k} ∈ {', '.join(v)}" for k, v in filters.items())
+    return "; ".join(f"{k} {_value_text(v)}" for k, v in filters.items())
 
 
 def _sort_people(

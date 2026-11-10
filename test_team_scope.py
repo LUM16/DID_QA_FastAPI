@@ -164,11 +164,13 @@ class ClampTodayTests(unittest.TestCase):
     def test_future_start_rejected(self):
         self.assertIsNone(ha.clamp_to_today(self._params(date(2027, 1, 1), date(2027, 3, 31)), self.TODAY))
 
-    def test_partial_month_counts_elapsed_workdays(self):
+    def test_capped_period_prorates_onboarding(self):
         import hce_caclulation as h
-        # Nov 2026: 21 workdays; Nov 2-3 (Mon, Tue) elapsed -> 2/21.
-        self.assertAlmostEqual(h.total_hce(date(2026, 11, 1), self.TODAY, None, None), 2 / 21)
-        self.assertAlmostEqual(h.total_hce(date(2026, 1, 1), date(2026, 12, 31), None, None), 12.0)
+        # Period HCE is 1.0 over the whole period; with the end capped at today a
+        # person onboarded on 2026-11-02 (Mon) is active 2 of 2 workdays in Nov 2-3.
+        self.assertAlmostEqual(h.total_hce(date(2026, 11, 1), self.TODAY, None, None), 1.0)
+        self.assertAlmostEqual(
+            h.total_hce(date(2026, 11, 1), self.TODAY, date(2026, 11, 3), None), 0.5)
 
     def test_hce_result_disables_org_chart(self):
         self.assertFalse(ha._result("", [], USAGE, {})["org_chart"])
