@@ -560,8 +560,8 @@ function buildOrg(g){
 function renderTabs(host,r){
   if(!r.rows || !r.rows.length){ host.innerHTML=''; return; }
   const cols=(r.columns&&r.columns.length)?r.columns:Object.keys(r.rows[0]||{});
-  let g=r.graph||{}; let org=isOrgGraph(g);
-  if(!org){const synth=orgFromRows(r.rows,cols); if(synth){g=synth;org=true;}}
+  let g=r.graph||{}; let org=r.org_chart!==false&&isOrgGraph(g);
+  if(!org&&r.org_chart!==false){const synth=orgFromRows(r.rows,cols); if(synth){g=synth;org=true;}}
   const chartKinds=['bar','line','pie'];
   const hasChart=r.viz&&chartKinds.includes(r.viz.kind);
   const autoGraph=localStorage.getItem(LS_AUTOG)!=='0';
@@ -594,7 +594,7 @@ function renderTabs(host,r){
     const k=t.dataset.k, pane=host.querySelector(`[data-pane="${k}"]`);
     pane.classList.add('active'); fill(k,pane);
   });
-  host.querySelectorAll('.dl').forEach(b=>b.onclick=()=>download(r.cypher,b.dataset.f));
+  host.querySelectorAll('.dl').forEach(b=>b.onclick=()=>download(r.cypher,b.dataset.f,r.rows,cols));
 }
 
 function buildTable(rows,columns){
@@ -857,8 +857,10 @@ async function sendFeedback(id,vote,el,reason,note=''){
   finally{controls.forEach(button=>button.disabled=false);}
 }
 
-async function download(cypher,fmt){if(!cypher){toast('No query available to export');return;}
-  const res=await api('/api/export',{cypher,format:fmt});const blob=await res.blob();
+async function download(cypher,fmt,rows,columns){
+  if(!cypher&&!(rows&&rows.length)){toast('No result available to export');return;}
+  const body=cypher?{cypher,format:fmt}:{cypher:'',format:fmt,rows,columns};
+  const res=await api('/api/export',body);const blob=await res.blob();
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='did_result.'+fmt;a.click();}
 
 const KEEP_ORIGINAL='__keep_original__';

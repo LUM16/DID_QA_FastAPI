@@ -19,6 +19,7 @@ from datetime import date
 from typing import Any, Callable
 
 import hce_caclulation as hce
+from team_scope import TeamScope
 from vox_client import add_usage, chat as _chat, empty_usage
 
 HCE_KEYWORD_RE = re.compile(r"(?<![A-Za-z])HCE(?![A-Za-z])", re.IGNORECASE)
@@ -30,10 +31,9 @@ HCE_CANDIDATE_RE = re.compile(
 # user wording -> filter key (traversal path handled by hce_caclulation)
 FEATURE_KEYS: dict[str, str] = {
     "Study_Info.Study_Type": "study type, e.g. INTERVENTIONAL / OBSERVATIONAL",
-    "Study_Info.TA": "therapeutic area, e.g. Oncology",
+    "Study_Info.Derived_TA": "therapeutic area, e.g. Oncology, Vaccines, I&I, Internal Medicine, Other",
     "Study_Info.Name": "study number, e.g. C1071032",
     "DIDN_Month.DID": "DID, e.g. C5841001_16",
-    "DIDN_Month.DID_Type": "DID type",
     "Study_Info.Plan_Phase": "study phase",
     "Study_Info.Study_Priority": "study priority",
 }
@@ -179,27 +179,65 @@ def _filter_text(filters: dict[str, Any]) -> str:
     return "; ".join(f"{k} ∈ {', '.join(v)}" for k, v in filters.items())
 
 
-def _format_answer(params: dict[str, Any], people: list[hce.PersonHCE], total: float | None) -> str:
-    period = f"{params['start']:%Y-%m} ~ {params['end']:%Y-%m}"
+def _sort_people(
+    params: dict[str, Any], people: list[hce.PersonHCE], levels: dict[str, int]
+) -> list[hce.PersonHCE]:
+    """Team: reporting level, then name. Department: name. Person: feature HCE desc."""
+    if levels:
+        return sorted(people, key=lambda p: (levels.get(p.name, 99), p.name.casefold()))
+    if params["mode"] == "department":
+        return sorted(people, key=lambda p: p.name.casefold())
+    return sorted(people, key=lambda p: -p.feature_hce)
+
+
+def _format_answer(
+    params: dict[str, Any],
+    people: list[hce.PersonHCE],
+    total: float | None,
+    levels: dict[str, int] | None = None,
+) -> str:
+    levels = levels or {}
+    period = f"{params['start']:%Y-%m-%d} ~ {params['end']:%Y-%m-%d}"
+    if params.get("requested_end"):
+        period += f", capped at today (requested end {params['requested_end']:%Y-%m-%d})"
     lines = [f"**HCE result** ({period})", "", f"- Feature filter: {_filter_text(params['feature_filter'])}"]
     if params["mode"] == "department":
-        group = _filter_text(params["group_filter"]).replace("all hours", "all persons")
+        if params.get("team_leads"):
+            others = {k: v for k, v in params["group_filter"].items() if k != "Name"}
+            group = f"team of {', '.join(params['team_leads'])} (Active members incl. lead)"
+            if others:
+                group += f"; {_filter_text(others)}"
+        else:
+            group = _filter_text(params["group_filter"]).replace("all hours", "all persons")
         lines += [f"- Person scope: {group}", f"- Department feature HCE total: **{total:.3f}** ({len(people)} persons)"]
     if not people:
         lines += ["", "No matching persons found."]
         return "\n".join(lines)
-    lines += ["", "| Name | NTID | Site | Total HCE | Feature hours / Total hours | Feature HCE |",
-              "|---|---|---|---|---|---|"]
-    for p in sorted(people, key=lambda x: -x.feature_hce)[:30]:
+    level_head, level_sep = ("Level | ", "---|") if levels else ("", "")
+    lines += ["", f"| {level_head}Name | NTID | Site | Total HCE | Feature hours / Total hours | Feature HCE |",
+              f"|{level_sep}---|---|---|---|---|---|"]
+    for p in people[:30]:
+        level = f"{levels.get(p.name, '')} | " if levels else ""
         lines.append(
-            f"| {p.name} | {p.ntid} | {p.site} | {p.total_hce:.3f} | "
+            f"| {level}{p.name} | {p.ntid} | {p.site} | {p.total_hce:.3f} | "
             f"{p.feature_hours:.1f} / {p.total_hours:.1f} | {p.feature_hce:.3f} |"
         )
     if len(people) > 30:
-        lines.append("\n(Showing top 30 persons; see the table/export for full results.)")
-    lines += ["", "Method: Total HCE = sum over months of (active workdays / month workdays, Mon-Fri, holidays ignored); "
+        lines.append("\n(Showing the first 30 persons; see the table or CSV/JSON download for full results.)")
+    if levels:
+        lines.append("\nLevel: 0 = team lead, 1 = direct report, 2+ = indirect report.")
+    lines += ["", "Method: Total HCE = active workdays / workdays in the period (Mon-Fri, holidays ignored; "
+              "1.0 = active for the whole period); department HCE = sum over persons; "
               "Feature HCE = Total HCE x feature hours / total hours."]
     return "\n".join(lines)
+
+
+def _to_rows(people: list[hce.PersonHCE], levels: dict[str, int]) -> list[dict[str, Any]]:
+    rows = []
+    for p in people:
+        row = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in asdict(p).items()}
+        rows.append({"report_level": levels.get(p.name), **row} if levels else row)
+    return rows
 
 
 def _result(answer: str, rows: list[dict[str, Any]], usage, timings, error=None) -> dict[str, Any]:
@@ -214,7 +252,28 @@ def _result(answer: str, rows: list[dict[str, Any]], usage, timings, error=None)
         "timings_ms": timings,
         "case_id": None,
         "graph": {},
+        "org_chart": False,  # rows carry names/levels, not a renderable reporting tree
     }
+
+
+def clamp_to_today(params: dict[str, Any], today: date) -> dict[str, Any] | None:
+    """Periods that are not over yet end today. Future-only periods -> None."""
+    if params["start"] > today:
+        return None
+    if params["end"] > today:
+        return {**params, "end": today, "requested_end": params["end"]}
+    return params
+
+
+_LEAD_KEYS = ("Team_Lead_Name", "Group_Lead_Name", "TA_Lead_Name")
+
+
+def apply_team_scope(params: dict[str, Any], scope: TeamScope) -> dict[str, Any]:
+    """Team questions are department HCE over the team's Active members."""
+    group = {k: v for k, v in params["group_filter"].items() if k not in _LEAD_KEYS}
+    group["Name"] = list(scope.members)
+    return {**params, "mode": "department", "persons": [], "group_filter": group,
+            "team_leads": list(scope.leads)}
 
 
 def answer_hce(
@@ -224,6 +283,7 @@ def answer_hce(
     initial_timings: dict[str, int] | None = None,
     chat: ChatFn = _chat,
     today: date | None = None,
+    team_scope: TeamScope | None = None,
 ) -> dict[str, Any]:
     timings = dict(initial_timings or {})
     usage = initial_usage or empty_usage()
@@ -234,12 +294,17 @@ def answer_hce(
     except Exception as exc:  # noqa: BLE001
         return _result(f"Failed to parse HCE parameters: {exc}", [], usage, timings, error=str(exc))
     timings["hce_parameters"] = int((time.perf_counter() - started) * 1000)
+    if team_scope is not None:
+        params = apply_team_scope(params, team_scope)
 
     if params["start"] is None:
         return _result(
             "Please specify the HCE time period (e.g. \"January to June 2026\" or \"first half of this year\").",
             [], usage, timings,
         )
+    params = clamp_to_today(params, today or date.today())
+    if params is None:
+        return _result("The requested HCE period starts in the future; no data yet.", [], usage, timings)
 
     started = time.perf_counter()
     if params["mode"] == "person":
@@ -252,6 +317,7 @@ def answer_hce(
                                            feature_filter=params["feature_filter"])
     timings["hce_calculation"] = int((time.perf_counter() - started) * 1000)
 
-    rows = [{k: (round(v, 4) if isinstance(v, float) else v) for k, v in asdict(p).items()}
-            for p in people]
-    return _result(_format_answer(params, people, total), rows, usage, timings)
+    levels = dict(team_scope.levels) if team_scope is not None else {}
+    people = _sort_people(params, people, levels)
+    rows = _to_rows(people, levels)
+    return _result(_format_answer(params, people, total, levels), rows, usage, timings)

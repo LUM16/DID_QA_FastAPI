@@ -105,8 +105,12 @@ class CopilotTokenBody(BaseModel):
 
 
 class ExportBody(BaseModel):
-    cypher: str
+    cypher: str = ""
     format: str = "csv"
+    # Results without Cypher (e.g. HCE, computed in Python) are exported from
+    # the rows the client already holds instead of re-running a query.
+    rows: list[dict[str, Any]] | None = None
+    columns: list[str] | None = None
 
 
 def jsonable(value: Any) -> Any:
@@ -196,6 +200,7 @@ def insight_payload(
         "entity_details": jsonable(result.get("entity_details")) if result.get("entity_details") else None,
         "row_count": row_count,
         "graph": jsonable(result.get("graph") or {}),
+        "org_chart": result.get("org_chart", True) is not False,
         "viz": _viz_payload(result.get("visualization")),
         "case_id": result.get("case_id"),
         "confidence": confidence,
@@ -393,7 +398,8 @@ def query(body: QueryBody, request: Request) -> dict[str, Any]:
     try:
         schema = get_schema() if body.refresh_schema else None
         with use_llm_provider(provider, github_token):
-            result = agent_ask(question, history=body.history, schema=schema)
+            persons = [p["name"] for p in match.get("resolved", []) if p.get("name")]
+            result = agent_ask(question, history=body.history, schema=schema, persons=persons)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -458,13 +464,19 @@ def improve(_body: ImproveBody) -> dict[str, Any]:
 
 @app.post("/api/export")
 def export_result(body: ExportBody) -> StreamingResponse:
-    try:
-        safe = ensure_read_only(body.cypher)
-        expanded = raise_limit(safe, MAX_EXPORT_ROWS)
-        meta = run_cypher_with_meta(expanded, max_rows=MAX_EXPORT_ROWS)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"Export refused: {exc}") from exc
-    rows, columns = meta["rows"], meta["columns"]
+    if body.cypher.strip():
+        try:
+            safe = ensure_read_only(body.cypher)
+            expanded = raise_limit(safe, MAX_EXPORT_ROWS)
+            meta = run_cypher_with_meta(expanded, max_rows=MAX_EXPORT_ROWS)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"Export refused: {exc}") from exc
+        rows, columns = meta["rows"], meta["columns"]
+    elif body.rows:
+        rows = body.rows[:MAX_EXPORT_ROWS]
+        columns = body.columns or list(dict.fromkeys(k for row in rows for k in row))
+    else:
+        raise HTTPException(status_code=400, detail="Export refused: no query or rows to export.")
     fmt = (body.format or "csv").lower()
     if fmt == "json":
         data = to_json(rows, columns)

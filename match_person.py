@@ -53,12 +53,16 @@ EXTRACTION_SYSTEM = (
     "2. Include nicknames, misspellings and partial names; do not correct them.\n"
     "3. Never invent a name that is absent from the question.\n"
     "4. Exclude study identifiers, DIDs, team names, therapeutic areas, "
-    "deliverable names and job titles.\n"
+    "deliverable names and job titles. A person named as a team owner is still "
+    "a person: in \"X's team\", \"team of X\", \"X team\", \"X的团队\", \"X组\" or "
+    "\"X下面的人\", extract X.\n"
     "5. Return an empty list when the question mentions no person.\n"
     "6. Output no markdown, commentary or explanation.\n"
     "Examples:\n"
     '- "predict C1071007_141 hours for Lumamman" -> {"names":["Lumamman"]}\n'
     '- "compare zhang wei and Li Hua workload" -> {"names":["zhang wei","Li Hua"]}\n'
+    '- "list deliveries of zhang wei\'s team" -> {"names":["zhang wei"]}\n'
+    '- "Li Hua的团队今年的HCE" -> {"names":["Li Hua"]}\n'
     '- "how many TLFs are in study C1071007?" -> {"names":[]}'
 )
 

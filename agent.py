@@ -44,6 +44,7 @@ from question_retrieval import (
 )
 from vox_client import add_usage, chat as _chat, empty_usage
 from hce_agent import answer_hce, classify_hce_intent
+from team_scope import TeamScope, resolve_team_scope, team_member_levels
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +152,7 @@ class AgentState(TypedDict, total=False):
     presentation_warning: str | None
     timings_ms: dict[str, int]
     generated_locally: bool
+    team_scope: TeamScope | None
 
 
 def _elapsed_ms(started: float) -> int:
@@ -1058,6 +1060,7 @@ def generate_cypher(
     schema: dict[str, Any],
     domain_context: str | list[dict[str, Any]] | None = None,
     history: list[dict[str, Any]] | None = None,
+    team_scope: TeamScope | None = None,
 ) -> tuple[str, dict[str, int]]:
     # Keep the pre-graph positional API working for callers that passed history
     # as the third argument.
@@ -1066,6 +1069,8 @@ def generate_cypher(
         domain_context = None
     schema_text = json.dumps(_compact_live_schema(schema), ensure_ascii=False, indent=2)
     prompt_context = domain_context or _build_domain_context(question)
+    if team_scope is not None:
+        prompt_context = f"{team_scope.prompt_hint()}\n\n{prompt_context}"
     history_text = ""
     if history:
         history_text = _history_for_prompt(history)
@@ -1092,7 +1097,8 @@ Rules:
 18. For who in China contributed to a submission, do not filter Site inside OPTIONAL MATCH. A China contributor is any of: a Person who WORKS_ON a Delivery that SUPPORT_SUBMISSION the submission and whose FROM_SITE Site.Name or Site.Site_Category is China; the Study.SDSL of a contributing study when that person is from the China site; or a non-blank Study.SDSA_China_PoC on a contributing study. Delivery has no PoC property. Follow submission.md.
 19. When the user asks which team supported a submission, a team is Person.Team_Lead_Name. Return distinct team lead names only. Do not list every person who worked on the submission.
 20. Study_Info includes Plan_Phase, TA, and Study_Priority via (Study)-[:HAS_DETAIL]->(Study_Info). SDSL is not a Study_Info property. Do not read SDSL from Study_Info.
-21. For how many datasets and TLFs have been delivered for a submission, follow submission.md sub004. Match Submission.Name on the compound code and submission type only, such as B798H and NDA. Ignore dose, round, and parenthetical words. Do not match Project_Name for this question. Keep deliveries whose Actual_Delivery_Date is set. Return one row per delivery with CSR_ADaM_Num_Total AS ADaM_Datasets, CSR_SDTM_Num_Total AS SDTM_Datasets, and CSR_TLF_Num_Total AS TLFs. Do not count HAS_SDTM, HAS_ADAM, or HAS_TLF nodes."""
+21. For how many datasets and TLFs have been delivered for a submission, follow submission.md sub004. Match Submission.Name on the compound code and submission type only, such as B798H and NDA. Ignore dose, round, and parenthetical words. Do not match Project_Name for this question. Keep deliveries whose Actual_Delivery_Date is set. Return one row per delivery with CSR_ADaM_Num_Total AS ADaM_Datasets, CSR_SDTM_Num_Total AS SDTM_Datasets, and CSR_TLF_Num_Total AS TLFs. Do not count HAS_SDTM, HAS_ADAM, or HAS_TLF nodes.
+22. Rule 19 is only for listing which teams took part. When a TEAM SCOPE section is given, the team is a filter: copy its REPORTS_TO*0.. pattern verbatim and bind every person in the query to that member variable."""
 
     user = f"""Schema:
 {schema_text}
@@ -1117,6 +1123,7 @@ def repair_cypher(
     previous_cypher: str,
     failure: str | list[dict[str, Any]],
     history: list[dict[str, Any]] | None = None,
+    team_scope: TeamScope | None = None,
 ) -> tuple[str, dict[str, int]]:
     schema_text = json.dumps(_compact_live_schema(schema), ensure_ascii=False, indent=2)
     history_text = ""
@@ -1139,6 +1146,7 @@ Rules:
 11. Studies reach a Submission only through (Study)-[:HAS_DELIVERY]->(Delivery)-[:SUPPORT_SUBMISSION]->(Submission) or (Study)-[:HAS_DID0]->(DID0)-[:SUPPORT_SUBMISSION]->(Submission). Do not add HAS_SDTM, HAS_ADAM, or HAS_TLF on that path. Match submission keywords separately with toUpper CONTAINS on Project_Name, or separately on Name. DSP category is Study_Info.DSP_Flag.
 12. China contributors are China-site people on supporting deliveries, a contributing study's SDSL when that person is from the China site, or a non-blank SDSA_China_PoC. Match the China site with MATCH (Person)-[:FROM_SITE]->(Site), not inside OPTIONAL MATCH."""
 
+    team_hint = f"\n{team_scope.prompt_hint()}\n" if team_scope is not None else ""
     user = f"""Schema:
 {schema_text}
 
@@ -1155,7 +1163,7 @@ Execution outcome: {
 }
 
 Use the schema and business intent to repair the query so it returns the expected data for the asked period.
-
+{team_hint}
 Generate a corrected read-only Cypher query."""
 
     raw, usage = _chat(system, user, max_tokens=GENERATION_MAX_TOKENS)
@@ -1298,7 +1306,7 @@ def _prepare(state: AgentState) -> AgentState:
             "error": None,
         }
 
-    local_cypher = template_cypher(state["question"])
+    local_cypher = None if state.get("team_scope") else template_cypher(state["question"])
     if local_cypher:
         return {
             "schema": state.get("schema") or {},
@@ -1338,18 +1346,27 @@ def _generate(state: AgentState) -> AgentState:
         state["schema"],
         state["domain_context"],
         state.get("history"),
+        team_scope=state.get("team_scope"),
     )
     return {
         "cypher": cypher,
         "usage": _add_state_usage(state, usage),
         "timings_ms": _add_timing(state, "cypher_generation", started),
-        "error": None,
+        "error": _team_scope_error(state, cypher),
         "generated_locally": False,
     }
 
 
+def _team_scope_error(state: AgentState, cypher: str) -> str | None:
+    scope = state.get("team_scope")
+    return scope.validate(cypher) if scope is not None else None
+
+
 def _execute(state: AgentState) -> AgentState:
     started = time.perf_counter()
+    if state.get("error"):  # team-scope validation failed; do not run unfiltered Cypher
+        return {"rows": [], "timings_ms": _add_timing(state, "neo4j", started),
+                "error": state["error"]}
     try:
         return {
             "rows": run_cypher(state["cypher"]),
@@ -1368,14 +1385,15 @@ def _repair(state: AgentState) -> AgentState:
     started = time.perf_counter()
     failure = state["error"] or "The query returned zero rows."
     cypher, usage = repair_cypher(
-        state["question"], state["schema"], state["cypher"], failure
+        state["question"], state["schema"], state["cypher"], failure,
+        team_scope=state.get("team_scope"),
     )
     return {
         "cypher": cypher,
         "usage": _add_state_usage(state, usage),
         "timings_ms": _add_timing(state, "cypher_repair", started),
         "repair_attempts": state.get("repair_attempts", 0) + 1,
-        "error": None,
+        "error": _team_scope_error(state, cypher),
     }
 
 
@@ -1638,9 +1656,14 @@ def _legacy_ask(
     question: str,
     history: list[dict[str, Any]] | None = None,
     schema: dict[str, Any] | None = None,
+    persons: list[str] | None = None,
 ) -> dict[str, Any]:
     load_env()
+    team_scope, team_usage = resolve_team_scope(
+        question, persons, _history_for_prompt(history or [])
+    )
     is_prediction, intent_usage = classify_effort_prediction_intent(question, history)
+    intent_usage = add_usage(team_usage, intent_usage)
     if is_prediction:
         try:
             result = answer_effort_prediction(
@@ -1666,13 +1689,24 @@ def _legacy_ask(
     for _attempt in range(3):
         try:
             hint = f"\nPrevious Cypher failed: {last_error}" if last_error else ""
-            cypher, u1 = generate_cypher(question + hint, schema, history)
+            cypher, u1 = generate_cypher(question + hint, schema, history, team_scope=team_scope)
             usage = add_usage(usage, u1)
+            scope_error = team_scope.validate(cypher) if team_scope else None
+            if scope_error:
+                repaired, u_fix = repair_cypher(question, schema, cypher, scope_error,
+                                                history, team_scope=team_scope)
+                usage = add_usage(usage, u_fix)
+                cypher = repaired
+                if team_scope.validate(cypher):
+                    raise ValueError(team_scope.validate(cypher))
             rows = run_cypher(cypher)
 
             if not rows and _needs_repair(question, rows, cypher):
-                repaired, u_repair = repair_cypher(question, schema, cypher, rows, history)
+                repaired, u_repair = repair_cypher(question, schema, cypher, rows, history,
+                                                   team_scope=team_scope)
                 usage = add_usage(usage, u_repair)
+                if team_scope and team_scope.validate(repaired):
+                    raise ValueError(team_scope.validate(repaired))
                 rows = run_cypher(repaired)
                 cypher = repaired
 
@@ -1737,28 +1771,45 @@ def ask(
     question: str,
     history: list[dict[str, Any]] | None = None,
     schema: dict[str, Any] | None = None,
+    persons: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Route predictions directly and execute standard queries through LangGraph."""
+    """Route predictions directly and execute standard queries through LangGraph.
+
+    `persons` are official Person.Name values already resolved by match_person;
+    they are only used to detect "<person>'s team" scoping.
+    """
     load_env()
     started = time.perf_counter()
-    local_cypher = template_cypher(question)
+    team_scope, team_usage = resolve_team_scope(
+        question, persons, _history_for_prompt(history or [])
+    )
+    timings = {"team_scope": _elapsed_ms(started)} if persons else {}
+    # Templates ignore team scope, so a team question always goes to the LLM.
+    local_cypher = None if team_scope else template_cypher(question)
+    hce_usage = empty_usage()
     if not local_cypher:
         is_hce, hce_usage = classify_hce_intent(question, history)
+        hce_usage = add_usage(team_usage, hce_usage)
         if is_hce:
+            if team_scope is not None:
+                team_scope = TeamScope.with_levels(
+                    team_scope.leads, team_member_levels(team_scope.leads)
+                )
             result = answer_hce(
                 question,
                 history,
                 initial_usage=hce_usage,
-                initial_timings={"intent": _elapsed_ms(started)},
+                initial_timings={**timings, "intent": _elapsed_ms(started)},
+                team_scope=team_scope,
             )
             result["schema"] = schema
             return result
     if local_cypher:
-        is_prediction, intent_usage = False, empty_usage()
+        is_prediction, intent_usage = False, team_usage
     else:
         is_prediction, intent_usage = classify_effort_prediction_intent(question, history)
         intent_usage = add_usage(hce_usage, intent_usage)
-    timings = {"intent": _elapsed_ms(started)}
+    timings = {**timings, "intent": _elapsed_ms(started)}
     if is_prediction:
         try:
             result = answer_effort_prediction(
@@ -1793,6 +1844,7 @@ def ask(
             "timings_ms": timings,
             "cypher": local_cypher or "",
             "generated_locally": bool(local_cypher),
+            "team_scope": team_scope,
         }
     )
     rows = result.get("rows", [])

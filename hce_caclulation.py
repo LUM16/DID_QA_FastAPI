@@ -5,7 +5,8 @@ Neo4j; calendar logic (Mon-Fri working days, onboard/offboard proration)
 is done in Python.
 
 Definitions
-- Step 1   total_hce   = sum over months of (active working days / month working days)
+- Step 1   total_hce   = active working days in period / working days in period
+           (1.0 for a person active over the whole period)
 - Step 2.1 total_hours = sum of TIME_ON.Hour in the period
 - Step 2.2 feature_hours = TIME_ON.Hour whose DIDN_Month links to a Study
            with Study_Info.Study_Type = study_type
@@ -55,13 +56,17 @@ def month_hce(
     month: int,
     onboard: date | None,
     offboard: date | None,
+    period_start: date | None = None,
+    period_end: date | None = None,
 ) -> float:
+    """Active workdays / month workdays. The denominator is always the full month,
+    so a period that stops mid-month (e.g. today) counts only the elapsed part."""
     first = date(year, month, 1)
     last = date(year, month, calendar.monthrange(year, month)[1])
-    active_start = max(first, onboard) if onboard else first
-    active_end = min(last, offboard) if offboard else last
+    active_start = max(d for d in (first, onboard, period_start) if d)
+    active_end = min(d for d in (last, offboard, period_end) if d)
     if active_end < active_start:
-        return 0.0  # before onboard / after offboard
+        return 0.0  # before onboard / after offboard / outside the period
     total = workdays(first, last)
     return workdays(active_start, active_end) / total if total else 0.0
 
@@ -80,9 +85,15 @@ def total_hce(
     onboard: date | None,
     offboard: date | None,
 ) -> float:
-    return sum(
-        month_hce(y, m, onboard, offboard) for y, m in _month_range(start, end)
-    )
+    """Period HCE: 1.0 for a person active over the whole [start, end].
+
+    Onboard/offboard inside the period prorate by working days:
+        active workdays in period / workdays in period
+    """
+    active_start = max(start, onboard) if onboard else start
+    active_end = min(end, offboard) if offboard else end
+    total = workdays(start, end)
+    return workdays(active_start, active_end) / total if total else 0.0
 
 
 # ---------------------------------------------------------------------------
